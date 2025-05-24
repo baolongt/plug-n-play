@@ -124,9 +124,9 @@ export const Adapters: Record<string, Adapter.Config> = {
     chain: 'ICP',
     adapter: IIAdapter,
     config: {
-      fetchRootKey: false,
-      verifyQuerySignatures: true,
-      derivationOrigin: undefined,
+      fetchRootKey: true,
+      verifyQuerySignatures: false,
+      timeout: 24 * 60 * 60 * 1000,
       localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
     },
   },

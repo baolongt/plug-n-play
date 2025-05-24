@@ -1,199 +1,195 @@
 // src/adapters/PlugAdapter.ts
 
-import { ActorSubclass } from "@dfinity/agent";
+import { ActorSubclass, Actor, HttpAgent } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { Adapter, Wallet } from "../../types/index.d";
 import { BaseAdapter } from "../BaseAdapter";
-import { createAccountFromPrincipal } from "../../utils/icUtils";
+import { createAccountFromPrincipal, withRetry } from "../../utils/icUtils";
 import { PlugAdapterConfig } from "../../types/AdapterConfigs";
+import { BrowserExtensionTransport } from "@slide-computer/signer-extension";
+import { SignerAgent } from "@slide-computer/signer-agent";
+import { Signer } from "@slide-computer/signer";
+
+// Plug's UUID for ICRC-94 support
+const PLUG_UUID = "71edc834-bab2-4d59-8860-c36a01fee7b8";
 
 // Extend BaseIcAdapter
 export class PlugAdapter extends BaseAdapter<PlugAdapterConfig> implements Adapter.Interface {
-  // Plug specific properties
-  private readyState:
-    | "NotDetected"
-    | "Installed"
-    | "Connected" = "NotDetected"; // Removed "Disconnected" as it's handled by BaseIcAdapter state
+  private static readonly PLUG_PRINCIPAL_KEY = "plug_principal"; // Key for localStorage
   
-  private _connectionState: boolean = false;
-  private _connectionStateTimestamp: number = 0;
-  private _connectionStateUpdateInterval: number = 2000; // Update every 2 seconds
-  // state and config are inherited
+  private signer: Signer | null = null;
+  private agent: HttpAgent | SignerAgent<any> | null = null;
+  private signerAgent: SignerAgent<Signer> | null = null;
+  private transport: BrowserExtensionTransport | null = null;
 
   // Constructor calls super and does Plug specific initialization
   constructor(args: Adapter.ConstructorArgs) {
     super(args); // Call base constructor with args
-    this.initPlug();
-    this.updateConnectionState();
+    this.initializeTransport();
   }
 
-  // Initialize Plug and set readyState accordingly
-  private initPlug(): void {
-    if (typeof window !== "undefined" && window.ic?.plug) {
-      window.ic.plug.isConnected().then((connected) => {
-        this.readyState = connected ? "Connected" : "Installed";
-        if (connected) {
-            this.setState(Adapter.Status.CONNECTED); // Set base state if already connected
-        } else {
-            this.setState(Adapter.Status.READY); // Set base state if installed but not connected
-        }
+  // Initialize transport and signer
+  private async initializeTransport(): Promise<void> {
+    try {
+      // Create browser extension transport for Plug
+      this.transport = await BrowserExtensionTransport.findTransport({
+        uuid: PLUG_UUID,
+        window: window,
       });
-    } else {
-      this.readyState = "NotDetected";
-      this.setState(Adapter.Status.INIT); // Or perhaps ERROR/UNAVAILABLE?
+      
+      this.signer = new Signer({
+        transport: this.transport
+      });
+      
+      this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
+      this.signerAgent = SignerAgent.createSync({
+        signer: this.signer,
+        account: Principal.anonymous(),
+        agent: this.agent,
+      });
+      
+      this.setState(Adapter.Status.READY);
+    } catch (error) {
+      console.warn("[Plug] Failed to initialize transport:", error);
+      this.setState(Adapter.Status.INIT);
+    }
+  }
+
+  async openChannel(): Promise<void> {
+    if (this.signer) {
+      await this.signer.openChannel();
     }
   }
 
   async connect(): Promise<Wallet.Account> {
     this.setState(Adapter.Status.CONNECTING);
-    const isConnected = await this.isConnected();
-
-    if (!isConnected) {
-      if (!window.ic?.plug) {
-          this.setState(Adapter.Status.ERROR);
-          throw new Error("Plug Wallet extension not detected.");
+    try {
+      // Ensure transport is initialized
+      if (!this.transport || !this.signer) {
+        await this.initializeTransport();
       }
-      try {
-        const connected = await window.ic.plug.requestConnect({
-          whitelist: this.adapter.config.delegationTargets?.filter(p => p != null) || [], 
-          host: this.adapter.config.hostUrl, 
-          timeout: this.adapter.config.timeout || 1000 * 60 * 60 * 24 * 7, 
-          onConnectionUpdate: () => this.handleConnectionUpdate(),
-        });
-        if (!connected) {
-          this.setState(Adapter.Status.READY);
-          throw new Error("User declined the connection request");
+      
+      if (!this.signerAgent || !this.signerAgent.signer) {
+        throw new Error("Plug signer agent not initialized. Please ensure Plug extension is installed.");
+      }
+      
+      let principal: Principal;
+      const storedPrincipal = localStorage.getItem(PlugAdapter.PLUG_PRINCIPAL_KEY);
+
+      if (storedPrincipal && storedPrincipal !== "null") {
+        try {
+          principal = Principal.fromText(storedPrincipal);
+          this.signerAgent.replaceAccount(principal);
+        } catch (e) {
+          localStorage.removeItem(PlugAdapter.PLUG_PRINCIPAL_KEY);
+          // Fall through to normal connection flow
+          const accounts = await this.signerAgent.signer.accounts();
+          if (!accounts || accounts.length === 0) {
+            await this.disconnect();
+            throw new Error("No accounts returned from Plug");
+          }
+          principal = accounts[0].owner;
+          localStorage.setItem(PlugAdapter.PLUG_PRINCIPAL_KEY, principal.toText());
+          this.signerAgent.replaceAccount(principal);
         }
-        this.readyState = "Connected";
-      } catch (e) {
-        this.setState(Adapter.Status.READY);
-        console.error("Failed to connect to Plug wallet:", e);
-        throw e;
-      }
-    } else {
-      this.readyState = "Connected";
-    }
+      } else {
+        const accounts = await withRetry(() => this.signerAgent!.signer.accounts());
+        if (!accounts || accounts.length === 0) {
+          await this.disconnect();
+          throw new Error("No accounts returned from Plug");
+        }
 
-    this._connectionState = true;
-    this._connectionStateTimestamp = Date.now();
-    this.setState(Adapter.Status.CONNECTED);
-    
-    const principal = await this.getPrincipal();
-    return createAccountFromPrincipal(principal);
+        principal = accounts[0].owner;
+        localStorage.setItem(PlugAdapter.PLUG_PRINCIPAL_KEY, principal.toText());
+        this.signerAgent.replaceAccount(principal);
+      }
+
+      if (principal.isAnonymous()) {
+        this.setState(Adapter.Status.READY);
+        throw new Error(
+          "Failed to authenticate with Plug - got anonymous principal"
+        );
+      }
+
+      if (this.adapter.config.fetchRootKey) {
+        if (!this.signerAgent) throw new Error("Signer agent not ready for fetchRootKey");
+        await this.signerAgent.fetchRootKey();
+      }
+      
+      this.setState(Adapter.Status.CONNECTED);
+      return createAccountFromPrincipal(principal);
+    } catch (error) {
+      console.error("[Plug] Connection error:", error);
+      await this.disconnect();
+      throw error;
+    }
   }
   
   // disconnect method is inherited, uses disconnectInternal and cleanupInternal
 
   async getPrincipal(): Promise<string> {
-    // Ensure Plug is available and we have a principal ID
-    if (this.readyState === "Connected" && window.ic?.plug?.principalId) {
-      return Principal.fromText(window.ic.plug.principalId).toText();
-    } else if (this.readyState === "Installed") {
-        // Try connecting silently if installed but not connected? Or just throw?
-        throw new Error("Plug wallet is installed but not connected.");
-    } else {
-        throw new Error("Plug wallet is not available or principal ID is unavailable");
+    if (!this.signerAgent) {
+      // Try to recreate signerAgent if missing
+      if (this.transport && this.signer && this.adapter.config.hostUrl) {
+        this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
+        this.signerAgent = SignerAgent.createSync({
+          signer: this.signer,
+          account: Principal.anonymous(),
+          agent: this.agent,
+        });
+      } else {
+        throw new Error("Plug signer agent not initialized or connected");
+      }
     }
+    const principal = await this.signerAgent.getPrincipal();
+    return principal.toText();
   }
 
   // getAccountId is inherited
 
-  // Implementation of the required abstract method from BaseIcAdapter
+  // Implementation of the required abstract method from BaseAdapter
   protected createActorInternal<T>(
     canisterId: string,
-    idl: any,
+    idlFactory: any,
     options?: { requiresSigning?: boolean }
   ): ActorSubclass<T> {
-    if (!window.ic?.plug?.createActor) {
-        throw new Error("Plug wallet is not available or not connected to create actor.");
+    if (!this.signerAgent) {
+      throw new Error("No signer agent available. Please connect first.");
     }
-    if (!canisterId || !idl) {
-      throw new Error("Canister ID and IDL factory are required");
-    }
-
     try {
-      // Plug's createActor returns a Promise<ActorSubclass<T>>
-      const actorPromise = window.ic.plug.createActor<T>({
+      const agentToUse = this.signerAgent;
+      
+      return Actor.createActor<T>(idlFactory, {
+        agent: agentToUse,
         canisterId,
-        interfaceFactory: idl,
       });
-
-      // Use a proxy to handle the promise resolution smoothly
-      const proxy = new Proxy({}, {
-        get: (_, prop) => {
-          if (prop === 'then') {
-            return undefined;
-          }
-          return (...args: any[]) => {
-            return actorPromise.then(actor => {
-              const value = actor[prop];
-              if (typeof value === 'function') {
-                return value.apply(actor, args);
-              }
-              return value;
-            });
-          };
-        }
-      }) as ActorSubclass<T>;
-
-      return proxy;
-    } catch (e) {
-      console.error("Failed to create actor through Plug:", e);
-      throw e;
-    }
-  }
-  
-  // Plug specific connection state update
-  private async updateConnectionState(): Promise<void> {
-    if (window.ic?.plug?.isConnected) {
-      this._connectionState = await window.ic.plug.isConnected();
-      this._connectionStateTimestamp = Date.now();
-      this.readyState = this._connectionState ? "Connected" : "Installed";
-      if (this._connectionState && this.state !== Adapter.Status.CONNECTED) {
-          this.setState(Adapter.Status.CONNECTED);
-      } else if (!this._connectionState && this.state === Adapter.Status.CONNECTED){
-          // If Plug reports disconnected but base state is connected, update base state
-          this.setState(Adapter.Status.READY); // Or DISCONNECTED?
-      }
-    } else {
-      this._connectionState = false;
-      this.readyState = "NotDetected";
-      this.setState(Adapter.Status.INIT);
+    } catch (error) {
+      console.error("[Plug] Actor creation error:", error);
+      throw error;
     }
   }
 
-  // Use polling check for synchronous isConnected
   async isConnected(): Promise<boolean> {
-    if (Date.now() - this._connectionStateTimestamp > this._connectionStateUpdateInterval) {
-      // Don't await, let it run in background
-      this.updateConnectionState().catch(err => console.error("[Plug] Failed background connection state update:", err));
-    }
-    return this._connectionState;
-  }
-
-  // Handle Plug's connection updates
-  private handleConnectionUpdate(): void {
-    // Trigger a state update
-    this.updateConnectionState().then(() => {
-        // Potentially emit a custom event for the dapp
-        window.dispatchEvent(new CustomEvent('pnp:connectionUpdate', { detail: { adapterId: 'plug', state: this.state } }));
-    }).catch(err => console.error("[Plug] Error handling connection update:", err));
+    return this.agent !== null && this.signer !== null && this.signerAgent !== null;
   }
 
   // Plug specific disconnect logic
   protected async disconnectInternal(): Promise<void> {
-    if (window.ic?.plug?.disconnect) {
-      await window.ic.plug.disconnect();
-    } else {
-      console.warn("Plug wallet is not available for disconnect");
+    if (this.signer) {
+      try {
+        this.signer.closeChannel();
+      } catch (error) {
+        console.warn("[Plug] Error closing signer channel:", error);
+      }
     }
+    // Clear stored principal on disconnect
+    localStorage.removeItem(PlugAdapter.PLUG_PRINCIPAL_KEY);
   }
 
   // Plug specific cleanup (resetting internal state)
   protected cleanupInternal(): void {
-      this.readyState = this._connectionState ? "Installed" : "NotDetected"; // Reset readyState based on installation
-      this._connectionState = false;
-      this._connectionStateTimestamp = 0;
+    // Reset agents but keep transport and signer for faster reconnection
+    this.agent = null;
+    this.signerAgent = null;
   }
-
 }
