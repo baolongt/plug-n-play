@@ -1,18 +1,16 @@
 import { ActorSubclass } from '@dfinity/agent';
+import { Ed25519KeyIdentity, DelegationChain } from '@dfinity/identity';
 import { Wallet, Adapter } from '../../types/index.d';
-import { BaseAdapter } from '../BaseAdapter';
+import { BaseDelegationAdapter } from '../BaseDelegationAdapter';
 import { NFIDAdapterConfig } from '../../types/AdapterConfigs';
-export declare class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
+export declare class NFIDAdapter extends BaseDelegationAdapter<NFIDAdapterConfig> {
     private agent;
-    private identity;
-    private sessionKey;
     private signerAgent;
     private signer;
     private transport;
-    private storage;
     constructor(args: Adapter.ConstructorArgs);
-    private clearStoredSession;
-    private restoreFromStorage;
+    protected onStorageRestored(sessionKey: Ed25519KeyIdentity, delegationChain: DelegationChain): Promise<void>;
+    protected onClearStoredSession(): Promise<void>;
     openChannel(): Promise<void>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;

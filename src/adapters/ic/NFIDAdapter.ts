@@ -1,43 +1,27 @@
 import { Principal } from "@dfinity/principal";
 import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
-import { DelegationIdentity, Ed25519KeyIdentity } from "@dfinity/identity";
+import { Ed25519KeyIdentity, DelegationChain, DelegationIdentity } from "@dfinity/identity";
 import { type Wallet, Adapter } from "../../types/index.d";
 import { PostMessageTransport } from "@slide-computer/signer-web";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
 import { SignerError } from "@slide-computer/signer";
-import { BaseAdapter } from "../BaseAdapter"; // Add BaseIcAdapter import
+import { BaseDelegationAdapter } from "../BaseDelegationAdapter";
 import { 
   createAccountFromPrincipal, 
   isPrincipalAnonymous,
   fetchRootKeyIfNeeded
-} from "../../utils/icUtils"; // Import utility functions
+} from "../../utils/icUtils";
 import { NFIDAdapterConfig } from "../../types/AdapterConfigs";
-import { 
-  IdbStorage, 
-  getDelegationChain, 
-  setDelegationChain, 
-  removeDelegationChain,
-  getIdentity,
-  setIdentity,
-  removeIdentity
-} from "@slide-computer/signer-storage";
 
-// Extend BaseIcAdapter instead of just implementing Adapter.Interface
-export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
+export class NFIDAdapter extends BaseDelegationAdapter<NFIDAdapterConfig> {
   private agent: HttpAgent;
-  private identity: DelegationIdentity | null = null;
-  private sessionKey: Ed25519KeyIdentity | null = null;
   private signerAgent: SignerAgent<Signer> | null;
   private signer: Signer | null;
   private transport: PostMessageTransport | null;
-  private storage: IdbStorage;
 
   constructor(args: Adapter.ConstructorArgs) {
-    super(args); // Call BaseIcAdapter constructor with args
-
-    // Initialize storage
-    this.storage = new IdbStorage();
+    super(args);
 
     // Get transport config with defaults for missing values
     const transportConfig = {
@@ -67,66 +51,21 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     // General purpose agent for non-signed/initial actions
     this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
 
-    this.setState(Adapter.Status.READY); // Use inherited setState
+    this.setState(Adapter.Status.READY);
+  }
 
-    // Attempt to restore from storage
-    this.restoreFromStorage().catch(error => {
-      console.debug("[NFID] Failed to restore from storage on init:", error);
+  // Implement abstract method from BaseDelegationAdapter
+  protected async onStorageRestored(sessionKey: Ed25519KeyIdentity, delegationChain: DelegationChain): Promise<void> {
+    this.signerAgent = SignerAgent.createSync({
+      signer: this.signer!,
+      account: this.identity!.getPrincipal(),
+      agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }),
     });
   }
-  
-  private async clearStoredSession(): Promise<void> {
-    this.identity = null;
-    this.signerAgent = null; 
-    this.sessionKey = null;
-    await removeIdentity("nfid", this.storage);
-    await removeDelegationChain("nfid", this.storage);
-    console.debug("[NFID] Cleared stored session data.");
-    // Do not change state here, let the caller manage it.
-  }
 
-  private async restoreFromStorage(): Promise<void> {
-    try {
-      console.debug("[NFID] Attempting to restore from storage...");
-      const storedSessionKey = await getIdentity("nfid", this.storage) as Ed25519KeyIdentity | undefined;
-      const delegationChain = await getDelegationChain("nfid", this.storage);
-      
-      if (!storedSessionKey || !delegationChain) {
-        console.debug("[NFID] No session key or delegation chain found in storage.");
-        await this.clearStoredSession(); // Clear if partially stored
-        return;
-      }
-
-      // Check if delegation is still valid
-      const expiration = delegationChain.delegations[0].delegation.expiration;
-      if (expiration < BigInt(Date.now() * 1_000_000)) {
-        console.debug("[NFID] Stored delegation chain has expired.");
-        await this.clearStoredSession();
-        return;
-      }
-
-      console.debug("[NFID] Found valid session key and delegation chain, restoring...");
-      
-      this.sessionKey = storedSessionKey;
-
-      this.identity = DelegationIdentity.fromDelegation(
-        this.sessionKey,
-        delegationChain
-      );
-
-      this.signerAgent = SignerAgent.createSync({
-        signer: this.signer!, // Signer should be initialized in constructor
-        account: this.identity.getPrincipal(),
-        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }),
-      });
-
-      console.debug("[NFID] Successfully restored connection.");
-      this.setState(Adapter.Status.CONNECTED);
-    } catch (error) {
-      console.error("[NFID] Error restoring from storage:", error);
-      await this.clearStoredSession();
-      // Do not change state here, allow connect flow to proceed if called from there
-    }
+  // Implement abstract method from BaseDelegationAdapter
+  protected async onClearStoredSession(): Promise<void> {
+    this.signerAgent = null;
   }
 
   async openChannel(): Promise<void> {
@@ -172,7 +111,6 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
         try {
             await this.restoreFromStorage();
             if (this.identity && this.state === Adapter.Status.CONNECTED) {
-                 console.debug("[NFID] Connection restored from storage during connect call.");
                  return createAccountFromPrincipal(this.identity.getPrincipal());
             }
         } catch (error) {
@@ -195,14 +133,11 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     }
 
     try {
-      console.debug("[NFID] Opening channel...");
       await this.signer.openChannel();
       
       // Generate a new session key ONLY if one wasn't restored/doesn't exist.
       // However, for NFID flow, a new session key is typically generated for each new delegation request.
       this.sessionKey = Ed25519KeyIdentity.generate(); 
-      console.debug("[NFID] Generated new session key for delegation request.");
-
 
       const maxTimeToLiveNs =
         this.adapter.config.delegationTimeout !== undefined
@@ -211,7 +146,6 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
           : BigInt(Date.now() * 1_000_000) +
             BigInt(48 * 60 * 60 * 1_000_000_000); 
 
-      console.debug("[NFID] Requesting delegation...");
       const delegationChain = await this.signer.delegation({
         publicKey: this.sessionKey.getPublicKey().toDer(),
         targets: Array.isArray(this.adapter.config.delegationTargets) 
@@ -222,9 +156,7 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
         maxTimeToLive: maxTimeToLiveNs,
       });
 
-      console.debug("[NFID] Storing session key and delegation chain...");
-      await setIdentity("nfid", this.sessionKey, this.storage);
-      await setDelegationChain("nfid", delegationChain, this.storage);
+      await this.storeSession(this.sessionKey, delegationChain);
 
       const delegationIdentity = DelegationIdentity.fromDelegation(
         this.sessionKey,
@@ -253,7 +185,6 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
         );
       }
 
-      console.debug("[NFID] Successfully connected and session stored.");
       this.setState(Adapter.Status.CONNECTED);
       return createAccountFromPrincipal(principal);
     } catch (error) {

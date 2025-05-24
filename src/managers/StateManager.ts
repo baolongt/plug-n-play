@@ -1,4 +1,3 @@
-import { PnpEventEmitter, PnpEventType } from '../events';
 import { ErrorManager, PnpError } from './ErrorManager';
 import { StatePersistenceManager, StatePersistenceOptions } from './StatePersistenceManager';
 
@@ -34,16 +33,13 @@ export class StateManager {
   private state: PnpState = PnpState.INITIALIZED;
   private transitions: StateTransition[] = [];
   private lastError?: Error;
-  private eventEmitter: PnpEventEmitter;
   private errorManager: ErrorManager;
   private persistenceManager: StatePersistenceManager;
 
   constructor(
-    eventEmitter: PnpEventEmitter,
     errorManager: ErrorManager,
     persistenceOptions?: StatePersistenceOptions
   ) {
-    this.eventEmitter = eventEmitter;
     this.errorManager = errorManager;
     this.persistenceManager = new StatePersistenceManager(errorManager, {
       key: persistenceOptions?.key || 'pnp-state',
@@ -107,12 +103,6 @@ export class StateManager {
     this.state = newState;
     this.transitions.push(transition);
     this.saveState();
-
-    this.eventEmitter.emit(PnpEventType.STATE_CHANGE, {
-      from: transition.from,
-      to: transition.to,
-      context: transition.context
-    });
 
     this.errorManager.info(`State changed from ${transition.from} to ${transition.to}`, {
       context: transition.context

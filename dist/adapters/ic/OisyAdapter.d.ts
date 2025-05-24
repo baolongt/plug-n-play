@@ -1,20 +1,10 @@
-import { ActorSubclass } from '@dfinity/agent';
-import { Wallet, Adapter } from '../../types/index.d';
-import { BaseAdapter } from '../BaseAdapter';
+import { PostMessageTransport } from '@slide-computer/signer-web';
+import { BaseSignerAdapter } from '../BaseSignerAdapter';
 import { OisyAdapterConfig } from '../../types/AdapterConfigs';
-export declare class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapter.Interface {
-    private static readonly OISY_PRINCIPAL_KEY;
-    private signer;
-    private agent;
-    private signerAgent;
-    private transport;
-    constructor(args: Adapter.ConstructorArgs);
-    openChannel(): Promise<void>;
-    isConnected(): Promise<boolean>;
-    getPrincipal(): Promise<string>;
+export declare class OisyAdapter extends BaseSignerAdapter<OisyAdapterConfig> {
+    protected transport: PostMessageTransport | null;
+    constructor(args: any);
+    private initializeTransport;
+    protected ensureTransportInitialized(): Promise<void>;
     getAccountId(): Promise<string>;
-    connect(): Promise<Wallet.Account>;
-    protected createActorInternal<T>(canisterId: string, idlFactory: any): ActorSubclass<T>;
-    protected disconnectInternal(): Promise<void>;
-    protected cleanupInternal(): void;
 }

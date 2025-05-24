@@ -1,19 +1,16 @@
 import { GlobalPnpConfig } from '../types/index.d';
 import { createPNPConfig } from '../config';
-import { PnpEventEmitter, PnpEventType, PnpEventListener, EventEmitter } from '../events';
 
 export interface ConfigValidationError {
   field: string;
   message: string;
 }
 
-export class ConfigManager implements PnpEventEmitter {
+export class ConfigManager {
   private config: GlobalPnpConfig;
-  private eventEmitter: EventEmitter;
 
   constructor(userConfig: GlobalPnpConfig = {}) {
     this.config = createPNPConfig(userConfig);
-    this.eventEmitter = new EventEmitter();
     this.validateConfig(this.config);
   }
 
@@ -22,26 +19,15 @@ export class ConfigManager implements PnpEventEmitter {
   }
 
   updateConfig(partialConfig: Partial<GlobalPnpConfig>) {
-    const oldConfig = this.config;
     const newConfig = createPNPConfig({ ...this.config, ...partialConfig });
     
     // Validate before updating
     const validationResult = this.validateConfig(newConfig);
     if (!validationResult.isValid) {
-      this.emit(PnpEventType.CONFIG_VALIDATION, { 
-        config: newConfig, 
-        isValid: false,
-        errors: validationResult.errors 
-      });
       throw new Error(`Invalid configuration: ${validationResult.errors.map(e => e.message).join(', ')}`);
     }
 
     this.config = newConfig;
-    this.emit(PnpEventType.CONFIG_CHANGE, { 
-      oldConfig, 
-      newConfig,
-      changes: partialConfig 
-    });
   }
 
   validateConfig(config: GlobalPnpConfig): { isValid: boolean; errors: ConfigValidationError[] } {
@@ -102,12 +88,6 @@ export class ConfigManager implements PnpEventEmitter {
     }
 
     const isValid = errors.length === 0;
-    this.emit(PnpEventType.CONFIG_VALIDATION, { 
-      config, 
-      isValid,
-      errors 
-    });
-
     return { isValid, errors };
   }
 
@@ -143,22 +123,5 @@ export class ConfigManager implements PnpEventEmitter {
         }
       }
     });
-  }
-
-  // Event emitter methods
-  on<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
-    this.eventEmitter.on(event, listener);
-  }
-
-  off<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
-    this.eventEmitter.off(event, listener);
-  }
-
-  emit<T>(event: PnpEventType, data: T): void {
-    this.eventEmitter.emit(event, data);
-  }
-
-  removeAllListeners(event?: PnpEventType): void {
-    this.eventEmitter.removeAllListeners(event);
   }
 } 

@@ -7,7 +7,6 @@ import {
   Identity,
   Actor,
 } from "@dfinity/agent";
-import { Principal } from "@dfinity/principal";
 import {
   WalletAdapterNetwork,
   type Adapter as SolanaAdapter,
@@ -17,7 +16,24 @@ import {
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { 
+  Connection, 
+  PublicKey, 
+  Transaction, 
+  SystemProgram, 
+  LAMPORTS_PER_SOL,
+  sendAndConfirmTransaction,
+  SendOptions 
+} from "@solana/web3.js";
+import {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction,
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAccount,
+  TokenAccountNotFoundError
+} from "@solana/spl-token";
 import {
   Ed25519KeyIdentity,
   DelegationIdentity,
@@ -28,19 +44,10 @@ import bs58 from "bs58";
 import { formatSiwsMessage } from "../../utils/utils";
 import type { _SERVICE as SiwsProviderService } from "../../did/ic_siws_provider";
 import { idlFactory as siwsProviderIdlFactory } from "../../did/ic_siws_provider.did.js";
-import { BaseAdapter } from "../BaseAdapter";
+import { BaseDelegationAdapter } from "../BaseDelegationAdapter";
 import { SiwsAdapterConfig } from "../../types/AdapterConfigs";
 import { TokenManager, SplTokenBalance } from "../../managers/SplTokenManager";
 import { deriveAccountId } from "../../utils/icUtils";
-import { 
-  IdbStorage, 
-  getDelegationChain, 
-  setDelegationChain, 
-  removeDelegationChain,
-  getIdentity,
-  setIdentity,
-  removeIdentity
-} from "@slide-computer/signer-storage";
 
 // Check if we're in a browser environment
 const isBrowser =
@@ -49,10 +56,7 @@ const isBrowser =
 // Define SIWS Provider Actor interface using generated types
 type SiwsProviderActor = ActorSubclass<SiwsProviderService>;
 
-export class SiwsAdapter
-  extends BaseAdapter<SiwsAdapterConfig>
-  implements Adapter.Interface
-{
+export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
   public walletName: string;
   public logo: string;
   public readonly id: string;
@@ -61,15 +65,10 @@ export class SiwsAdapter
     Adapter.Chain.SOL,
   ];
 
-  protected state: Adapter.Status = Adapter.Status.INIT;
   private solanaAdapter: Promise<SolanaAdapter> | null = null;
   private solanaConnection: Connection;
-  private identity: Identity | null = null;
-  private principal: Principal | null = null;
   private solanaAddress: string | null = null;
   private tokenManager: TokenManager;
-  private storage: IdbStorage;
-  private sessionKey: Ed25519KeyIdentity | null = null;
 
   constructor(args: Adapter.ConstructorArgs & { config: SiwsAdapterConfig }) {
     super(args);
@@ -77,7 +76,6 @@ export class SiwsAdapter
     this.walletName = args.adapter.walletName;
     this.logo = args.adapter.logo;
     this.config = args.config;
-    this.storage = new IdbStorage();
     
     const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
     const endpoint =
@@ -93,74 +91,25 @@ export class SiwsAdapter
       this.setupWalletListeners();
     }
 
-    this.state = Adapter.Status.READY;
-
-    // Attempt to restore from storage
-    this.restoreFromStorage().catch(error => {
-      this.logger.debug("Failed to restore from storage:", error);
-    });
+    this.setState(Adapter.Status.READY);
   }
 
-  private async restoreFromStorage(): Promise<void> {
-    try {
-      this.logger.debug(`[${this.id}] Attempting to restore from storage...`);
-      // Explicitly type assertion as we expect Ed25519 for SIWS
-      const storedSessionKey = await getIdentity(this.id, this.storage) as Ed25519KeyIdentity | undefined;
-      const delegationChain = await getDelegationChain(this.id, this.storage);
-      const storedSolanaAddress = await this.storage.get(`${this.id}-solana-address`);
-
-      if (!storedSessionKey || !delegationChain) {
-        this.logger.debug(`[${this.id}] No session key or delegation chain found in storage.`);
-        await this.clearStoredSession();
-        return;
-      }
-
-      // Check if delegation is still valid
-      const expiration = delegationChain.delegations[0].delegation.expiration;
-      if (expiration < BigInt(Date.now() * 1_000_000)) {
-        this.logger.debug(`[${this.id}] Stored delegation chain has expired.`);
-        await this.clearStoredSession();
-        return;
-      }
-
-      this.logger.debug(`[${this.id}] Found valid session key and delegation chain, restoring...`);
-      
-      this.sessionKey = storedSessionKey;
-
-      this.identity = DelegationIdentity.fromDelegation(
-        this.sessionKey,
-        delegationChain
-      );
-
-      this.principal = this.identity.getPrincipal();
-
-      if (storedSolanaAddress && typeof storedSolanaAddress === 'string') {
-        this.solanaAddress = storedSolanaAddress;
-      } else {
-        // If solana address is missing, something is inconsistent. Clear session.
-        this.logger.warn(`[${this.id}] Solana address missing from storage during restore. Clearing session.`);
-        await this.clearStoredSession();
-        return;
-      }
-      
-      this.logger.debug(`[${this.id}] Successfully restored connection.`);
-      this.state = Adapter.Status.CONNECTED;
-    } catch (error) {
-      this.logger.error(`[${this.id}] Error restoring from storage:`, error);
-      await this.clearStoredSession();
+  // Implement abstract methods from BaseDelegationAdapter
+  protected async onStorageRestored(sessionKey: Ed25519KeyIdentity, delegationChain: DelegationChain): Promise<void> {
+    // Restore the Solana address
+    const storedSolanaAddress = await this.storage.get(`${this.id}-solana-address`);
+    if (storedSolanaAddress && typeof storedSolanaAddress === 'string') {
+      this.solanaAddress = storedSolanaAddress;
+    } else {
+      // If solana address is missing, the restoration is incomplete
+      throw new Error("Solana address missing from storage during restore");
     }
   }
 
-  private async clearStoredSession(): Promise<void> {
-    this.identity = null;
-    this.principal = null;
+  protected async onClearStoredSession(): Promise<void> {
+    // Clear SIWS-specific data
     this.solanaAddress = null;
-    this.sessionKey = null;
-    await removeIdentity(this.id, this.storage);
-    await removeDelegationChain(this.id, this.storage);
     await this.storage.remove(`${this.id}-solana-address`);
-    this.state = Adapter.Status.READY; // Or DISCONNECTED if appropriate
-     this.logger.debug(`[${this.id}] Cleared stored session data.`);
   }
 
   private async createSolanaAdapter(
@@ -246,7 +195,7 @@ export class SiwsAdapter
     this.logger.error(`Solana wallet error`, error, {
       wallet: this.walletName,
     });
-    this.state = Adapter.Status.ERROR;
+    this.setState(Adapter.Status.ERROR);
     this.disconnect();
   };
 
@@ -266,21 +215,23 @@ export class SiwsAdapter
     }
 
     // If we're already connected, return the current account
-    if (this.identity && this.principal && this.state === Adapter.Status.CONNECTED) {
+    if (this.identity && this.state === Adapter.Status.CONNECTED) {
+      const principal = this.identity.getPrincipal();
       return {
-        owner: this.principal.toText(),
-        subaccount: deriveAccountId(this.principal),
+        owner: principal.toText(),
+        subaccount: deriveAccountId(principal),
       };
     }
 
     // Try to restore from storage first
     if (!this.identity) {
       try {
-        await this.restoreFromStorage();
-        if (this.identity && this.principal && this.state === Adapter.Status.CONNECTED) {
+        await super.restoreFromStorage();
+        if (this.identity && this.state === Adapter.Status.CONNECTED) {
+          const principal = this.identity.getPrincipal();
           return {
-            owner: this.principal.toText(),
-            subaccount: deriveAccountId(this.principal),
+            owner: principal.toText(),
+            subaccount: deriveAccountId(principal),
           };
         }
       } catch (error) {
@@ -289,15 +240,6 @@ export class SiwsAdapter
         await this.clearStoredSession();
       }
     }
-    
-    // If after attempting restore, we are now connected, return.
-    if (this.identity && this.principal && this.state === Adapter.Status.CONNECTED) {
-      return {
-        owner: this.principal.toText(),
-        subaccount: deriveAccountId(this.principal),
-      };
-    }
-
 
     if (!this.solanaAdapter) {
       const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
@@ -308,36 +250,17 @@ export class SiwsAdapter
       this.setupWalletListeners();
     }
 
-    if (
-      this.state === Adapter.Status.CONNECTING // Already connecting, avoid race conditions
-    ) {
-       this.logger.warn(`[${this.id}] Connect called while already connecting. Waiting for existing attempt.`);
-       // Potentially return a promise that resolves with the ongoing connection result
-       // For now, let it fall through, but this might need robust handling for concurrent calls
-       // For simplicity, we'll assume connect isn't called concurrently in a problematic way.
-       // Or throw: throw new Error("Adapter is already in the process of connecting.");
-    }
-    
-    // Reset state if it was e.g. ERROR
-    // Allow connect from READY, INIT, or DISCONNECTED
-    if (this.state !== Adapter.Status.READY && 
-        this.state !== Adapter.Status.INIT && 
-        this.state !== Adapter.Status.DISCONNECTED) {
-        // If in an unexpected state like CONNECTING or ERROR, reset to READY before proceeding
-        // Or potentially throw, depending on desired handling of odd states.
-        this.logger.warn(`[${this.id}] Connect called from unexpected state ${this.state}. Resetting to READY.`);
-        this.state = Adapter.Status.READY;
+    // Simplify state management
+    const validStates = [Adapter.Status.READY, Adapter.Status.INIT, Adapter.Status.DISCONNECTED];
+    if (!validStates.includes(this.state)) {
+      this.logger.warn(`[${this.id}] Connect called from unexpected state ${this.state}.`);
+      if (this.state === Adapter.Status.CONNECTING) {
+        throw new Error("Adapter is already in the process of connecting.");
+      }
+      this.setState(Adapter.Status.READY);
     }
 
-    // Check again if we can connect (covers states like CONNECTING)
-    if (this.state !== Adapter.Status.READY &&
-        this.state !== Adapter.Status.DISCONNECTED &&
-        this.state !== Adapter.Status.INIT
-    ) {
-      throw new Error(`Cannot connect while in state: ${this.state}`);
-    }
-
-    this.state = Adapter.Status.CONNECTING;
+    this.setState(Adapter.Status.CONNECTING);
 
     try {
       const adapter = await this.solanaAdapter;
@@ -369,13 +292,13 @@ export class SiwsAdapter
               `Connection cancelled by user (modal closed or rejected).`,
               { wallet: this.walletName },
             );
-            this.state = Adapter.Status.DISCONNECTED;
+            this.setState(Adapter.Status.DISCONNECTED);
             const cancelError = new Error("Connection cancelled by user");
             cancelError.name = "UserCancelledError";
             throw cancelError;
           }
 
-          this.state = Adapter.Status.ERROR;
+          this.setState(Adapter.Status.ERROR);
           if (adapter.connected) {
             try {
               await adapter.disconnect();
@@ -407,31 +330,22 @@ export class SiwsAdapter
 
       const siwsResult = await this.performSiwsLogin(this.solanaAddress);
       this.identity = siwsResult.identity;
-      this.principal = siwsResult.principal;
-      this.sessionKey = siwsResult.sessionKey; // Capture the sessionKey
+      this.sessionKey = siwsResult.sessionKey;
 
-      // Store the session key and delegation chain
-      if (this.sessionKey) {
-        await setIdentity(this.id, this.sessionKey, this.storage);
-      }
-      if (this.identity instanceof DelegationIdentity) {
-        await setDelegationChain(this.id, this.identity.getDelegation(), this.storage);
-      } else {
-         this.logger.warn(`[${this.id}] SIWS login did not result in a DelegationIdentity. Cannot store delegation chain.`);
-         // This case should ideally not happen if SIWS is successful
-      }
+      // Use base class storeSession method
+      await this.storeSession(this.sessionKey, this.identity.getDelegation());
 
-
-      if (!this.principal || this.principal.isAnonymous()) {
+      const principal = this.identity.getPrincipal();
+      if (!principal || principal.isAnonymous()) {
         await this.clearStoredSession(); // Clear any partial data
         throw new Error("SIWS login failed: Resulted in anonymous principal.");
       }
       
       this.logger.debug(`[${this.id}] Successfully connected and session stored.`);
-      this.state = Adapter.Status.CONNECTED;
+      this.setState(Adapter.Status.CONNECTED);
       return {
-        owner: this.principal.toText(),
-        subaccount: deriveAccountId(this.principal),
+        owner: principal.toText(),
+        subaccount: deriveAccountId(principal),
       };
     } catch (error) {
       this.logger.error(`Overall connect process failed`, error as Error, {
@@ -441,21 +355,16 @@ export class SiwsAdapter
       await this.clearStoredSession(); // Ensure cleanup on any connect error
 
       if (error.name === "UserCancelledError") {
-        this.state = Adapter.Status.DISCONNECTED;
+        this.setState(Adapter.Status.DISCONNECTED);
       } else {
-        this.state = Adapter.Status.ERROR;
+        this.setState(Adapter.Status.ERROR);
       }
-
-      // No need to set identity/principal to null here, clearStoredSession does it.
 
       if (this.solanaAdapter) {
         try {
           const adapter = await this.solanaAdapter;
-          if (adapter && adapter.connected) {
-            // Don't disconnect if the error was UserCancelled, as it might already be handled by the wallet adapter
-            if (error.name !== "UserCancelledError") {
-                 await adapter.disconnect();
-            }
+          if (adapter && adapter.connected && error.name !== "UserCancelledError") {
+            await adapter.disconnect();
           }
         } catch (cleanupError) {
           this.logger.error(
@@ -470,43 +379,30 @@ export class SiwsAdapter
     }
   }
 
-  async disconnect(): Promise<void> {
-    if (!isBrowser) return;
-    if (
-      this.state === Adapter.Status.DISCONNECTING ||
-      this.state === Adapter.Status.DISCONNECTED
-    ) {
-      return;
-    }
-    this.logger.debug(`[${this.id}] Disconnecting...`);
-    this.state = Adapter.Status.DISCONNECTING;
-
-    try {
-      if (this.solanaAdapter) {
+  // Implement disconnectInternal to leverage base class disconnect
+  protected async disconnectInternal(): Promise<void> {
+    if (this.solanaAdapter) {
+      try {
         const adapter = await this.solanaAdapter;
         if (adapter.connected) {
-          this.removeWalletListeners(); // Remove listeners before disconnect
+          this.removeWalletListeners();
           await adapter.disconnect();
-          this.setupWalletListeners(); // Re-attach listeners if adapter might be reused
+          this.setupWalletListeners();
         }
+      } catch (error) {
+        this.logger.warn(`Error during Solana disconnect`, {
+          error,
+          wallet: this.walletName,
+        });
       }
-    } catch (error) {
-      this.logger.warn(`Error during Solana disconnect`, {
-        error,
-        wallet: this.walletName,
-      });
-    } finally {
-      await this.clearStoredSession();
-      this.state = Adapter.Status.DISCONNECTED;
-      this.logger.debug(`[${this.id}] Disconnected and session cleared.`);
     }
   }
 
   async getPrincipal(): Promise<string> {
-    if (!this.principal) {
+    if (!this.identity) {
       throw new Error("Not connected or SIWS flow not completed.");
     }
-    return this.principal.toText();
+    return this.identity.getPrincipal().toText();
   }
 
   async getAccountId(): Promise<string> {
@@ -524,14 +420,15 @@ export class SiwsAdapter
   }
 
   async getAddresses(): Promise<Adapter.Addresses> {
+    const principal = this.identity?.getPrincipal();
     return {
       sol: {
         address: this.solanaAddress,
         network: this.config.solanaNetwork,
       },
       icp: {
-        address: this.principal?.toText(),
-        subaccount: deriveAccountId(this.principal),
+        address: principal?.toText(),
+        subaccount: principal ? deriveAccountId(principal) : undefined,
       },
     };
   }
@@ -760,7 +657,7 @@ export class SiwsAdapter
 
   private async performSiwsLogin(
     address: string,
-  ): Promise<{ identity: Identity; principal: Principal; sessionKey: Ed25519KeyIdentity }> {
+  ): Promise<{ identity: DelegationIdentity; sessionKey: Ed25519KeyIdentity }> {
     const anonSiwsActor = this.createSiwsProviderActor();
     const siwsMessage = await this._prepareLogin(anonSiwsActor, address);
     const signature = await this._signSiwsMessage(siwsMessage);
@@ -790,8 +687,228 @@ export class SiwsAdapter
       sessionIdentity, // Pass the Ed25519KeyIdentity here
       loginDetails.user_canister_pubkey.slice().buffer,
     );
-    const principal = delegationIdentity.getPrincipal();
 
-    return { identity: delegationIdentity, principal, sessionKey: sessionIdentity };
+    return { identity: delegationIdentity, sessionKey: sessionIdentity };
+  }
+
+  // Send SOL to another address
+  async sendSol(
+    toAddress: string,
+    amountInSol: number,
+    options?: SendOptions
+  ): Promise<string> {
+    if (!this.solanaAdapter) {
+      throw new Error("Solana adapter not initialized");
+    }
+    
+    const adapter = await this.solanaAdapter;
+    if (!adapter.connected || !adapter.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: adapter.publicKey,
+          toPubkey: new PublicKey(toAddress),
+          lamports: Math.floor(amountInSol * LAMPORTS_PER_SOL),
+        })
+      );
+
+      // Get recent blockhash
+      const { blockhash } = await this.solanaConnection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = adapter.publicKey;
+
+      // Sign and send transaction
+      const signature = await adapter.sendTransaction(
+        transaction,
+        this.solanaConnection,
+        options
+      );
+
+      // Confirm transaction
+      await this.solanaConnection.confirmTransaction(signature, 'confirmed');
+
+      return signature;
+    } catch (error) {
+      this.logger.error(`Failed to send SOL`, error as Error, {
+        wallet: this.walletName,
+        toAddress,
+        amount: amountInSol,
+      });
+      throw error;
+    }
+  }
+
+  // Send SPL tokens to another address
+  async sendSplToken(
+    mintAddress: string,
+    toAddress: string,
+    amount: number,
+    decimals: number,
+    options?: SendOptions
+  ): Promise<string> {
+    if (!this.solanaAdapter) {
+      throw new Error("Solana adapter not initialized");
+    }
+    
+    const adapter = await this.solanaAdapter;
+    if (!adapter.connected || !adapter.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const mint = new PublicKey(mintAddress);
+      const recipient = new PublicKey(toAddress);
+
+      // Get sender's token account
+      const senderTokenAccount = await getAssociatedTokenAddress(
+        mint,
+        adapter.publicKey,
+        false,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      );
+
+      // Get recipient's token account
+      const recipientTokenAccount = await getAssociatedTokenAddress(
+        mint,
+        recipient,
+        false,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      );
+
+      const transaction = new Transaction();
+
+      // Check if recipient token account exists
+      try {
+        await getAccount(
+          this.solanaConnection,
+          recipientTokenAccount,
+          'confirmed',
+          TOKEN_PROGRAM_ID
+        );
+      } catch (error) {
+        if (error instanceof TokenAccountNotFoundError) {
+          // Create associated token account for recipient
+          transaction.add(
+            createAssociatedTokenAccountInstruction(
+              adapter.publicKey,
+              recipientTokenAccount,
+              recipient,
+              mint,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID
+            )
+          );
+        } else {
+          throw error;
+        }
+      }
+
+      // Create transfer instruction
+      const transferAmount = Math.floor(amount * Math.pow(10, decimals));
+      transaction.add(
+        createTransferInstruction(
+          senderTokenAccount,
+          recipientTokenAccount,
+          adapter.publicKey,
+          transferAmount,
+          [],
+          TOKEN_PROGRAM_ID
+        )
+      );
+
+      // Get recent blockhash
+      const { blockhash } = await this.solanaConnection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = adapter.publicKey;
+
+      // Sign and send transaction
+      const signature = await adapter.sendTransaction(
+        transaction,
+        this.solanaConnection,
+        options
+      );
+
+      // Confirm transaction
+      await this.solanaConnection.confirmTransaction(signature, 'confirmed');
+
+      return signature;
+    } catch (error) {
+      this.logger.error(`Failed to send SPL token`, error as Error, {
+        wallet: this.walletName,
+        mintAddress,
+        toAddress,
+        amount,
+        decimals,
+      });
+      throw error;
+    }
+  }
+
+  // Helper method to estimate transaction fees
+  async estimateTransactionFee(
+    transaction: Transaction
+  ): Promise<number> {
+    if (!this.solanaAdapter) {
+      throw new Error("Solana adapter not initialized");
+    }
+    
+    const adapter = await this.solanaAdapter;
+    if (!adapter.connected || !adapter.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const { blockhash } = await this.solanaConnection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = adapter.publicKey;
+
+      const message = transaction.compileMessage();
+      const fee = await this.solanaConnection.getFeeForMessage(message, 'confirmed');
+      
+      if (fee.value === null) {
+        throw new Error("Unable to estimate fee");
+      }
+      
+      return fee.value / LAMPORTS_PER_SOL;
+    } catch (error) {
+      this.logger.error(`Failed to estimate transaction fee`, error as Error, {
+        wallet: this.walletName,
+      });
+      throw error;
+    }
+  }
+
+  // Helper method to get transaction status
+  async getTransactionStatus(signature: string): Promise<{
+    confirmed: boolean;
+    slot?: number;
+    err?: any;
+  }> {
+    try {
+      const status = await this.solanaConnection.getSignatureStatus(signature);
+      
+      if (!status.value) {
+        return { confirmed: false };
+      }
+      
+      return {
+        confirmed: status.value.confirmationStatus === 'confirmed' || 
+                  status.value.confirmationStatus === 'finalized',
+        slot: status.value.slot,
+        err: status.value.err,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get transaction status`, error as Error, {
+        wallet: this.walletName,
+        signature,
+      });
+      throw error;
+    }
   }
 }
+

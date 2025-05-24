@@ -1,48 +1,37 @@
 import { AdapterConfig, AdapterInterface, AdapterStatus } from '../types/AdapterTypes';
 import { WalletAccount } from '../types/WalletTypes';
 import { GlobalPnpConfig } from '../types/index.d';
-import { PnpEventEmitter, PnpEventType, PnpEventListener, EventEmitter, PnpEvent } from '../events';
 import { ErrorManager } from './ErrorManager';
 
-export class ConnectionManager implements PnpEventEmitter {
+export class ConnectionManager {
   config: GlobalPnpConfig;
   adapter: AdapterConfig | null = null;
   provider: AdapterInterface | null = null;
   account: WalletAccount | null = null;
   status: AdapterStatus = AdapterStatus.INIT;
-  private eventEmitter: EventEmitter;
   private logger: ErrorManager;
+  private onConnectedCallback?: () => Promise<void>;
+  private onDisconnectedCallback?: () => Promise<void>;
 
   constructor(config: GlobalPnpConfig, logger?: ErrorManager) {
     this.config = config;
     this.status = AdapterStatus.READY;
-    this.eventEmitter = new EventEmitter();
-    this.logger = logger || new ErrorManager(this.eventEmitter);
+    this.logger = logger || new ErrorManager();
+  }
+
+  setOnConnected(callback: () => Promise<void>): void {
+    this.onConnectedCallback = callback;
+  }
+
+  setOnDisconnected(callback: () => Promise<void>): void {
+    this.onDisconnectedCallback = callback;
   }
 
   private _resetState(): void {
-    const oldAccount = this.account;
-    const oldProvider = this.provider;
-    const oldAdapter = this.adapter;
-    const oldStatus = this.status;
-
     this.account = null;
     this.provider = null;
     this.adapter = null;
     this.status = AdapterStatus.READY;
-
-    this.emit(PnpEventType.STATUS_CHANGE, { 
-      oldStatus, 
-      newStatus: this.status 
-    });
-    this.emit(PnpEventType.ACCOUNT_CHANGE, { 
-      oldAccount, 
-      newAccount: null 
-    });
-    this.emit(PnpEventType.ADAPTER_CHANGE, { 
-      oldAdapter, 
-      newAdapter: null 
-    });
   }
 
   async openChannel(): Promise<void> {
@@ -53,40 +42,11 @@ export class ConnectionManager implements PnpEventEmitter {
 
   async connect(walletId?: string): Promise<WalletAccount | null> {
     if (this.status === AdapterStatus.CONNECTING) {
-      // If already connecting, wait for the current attempt to complete
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.off(PnpEventType.CONNECTED, onConnected);
-          this.off(PnpEventType.ERROR, onError);
-          reject(new Error('Connection attempt timed out'));
-        }, 30000); // 30 second timeout
-
-        const onConnected = (event: PnpEvent<{ account: WalletAccount }>) => {
-          clearTimeout(timeout);
-          this.off(PnpEventType.CONNECTED, onConnected);
-          this.off(PnpEventType.ERROR, onError);
-          resolve(event.data.account);
-        };
-
-        const onError = (event: PnpEvent<{ error: Error }>) => {
-          clearTimeout(timeout);
-          this.off(PnpEventType.CONNECTED, onConnected);
-          this.off(PnpEventType.ERROR, onError);
-          reject(event.data.error);
-        };
-
-        this.on(PnpEventType.CONNECTED, onConnected);
-        this.on(PnpEventType.ERROR, onError);
-      });
+      // If already connecting, throw an error instead of waiting
+      throw new Error('Connection already in progress');
     }
     
-    const oldStatus = this.status;
     this.status = AdapterStatus.CONNECTING;
-    this.emit(PnpEventType.STATUS_CHANGE, { 
-      oldStatus, 
-      newStatus: AdapterStatus.CONNECTING,
-      walletId 
-    });
 
     let instance: AdapterInterface | null = null;
     try {
@@ -120,10 +80,6 @@ export class ConnectionManager implements PnpEventEmitter {
         throw new Error('Invalid connection result: Missing account or owner');
       }
 
-      const oldAccount = this.account;
-      const oldAdapter = this.adapter;
-      const oldStatus = this.status;
-
       this.account = account;
       this.adapter = {
         id: adapterInfo.id || targetWalletId,
@@ -137,30 +93,15 @@ export class ConnectionManager implements PnpEventEmitter {
       this.provider = instance;
       this.status = AdapterStatus.CONNECTED;
 
-      this.emit(PnpEventType.CONNECTED, { account });
-      this.emit(PnpEventType.STATUS_CHANGE, { 
-        oldStatus, 
-        newStatus: this.status,
-        walletId 
-      });
-      this.emit(PnpEventType.ACCOUNT_CHANGE, { 
-        oldAccount, 
-        newAccount: account 
-      });
-      this.emit(PnpEventType.ADAPTER_CHANGE, { 
-        oldAdapter, 
-        newAdapter: adapterInfo 
-      });
+      // Call the connected callback if set
+      if (this.onConnectedCallback) {
+        await this.onConnectedCallback();
+      }
 
       return account;
     } catch (error) {
       // First transition to ERROR state
       this.status = AdapterStatus.ERROR;
-      this.emit(PnpEventType.STATUS_CHANGE, { 
-        oldStatus, 
-        newStatus: AdapterStatus.ERROR,
-        walletId 
-      });
       
       // Emit error with more context
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -169,11 +110,6 @@ export class ConnectionManager implements PnpEventEmitter {
       if (error instanceof Error && error.name) {
         enhancedError.name = error.name; 
       }
-      this.emit(PnpEventType.ERROR, { 
-        error: enhancedError, 
-        operation: 'connect',
-        walletId 
-      });
 
       // Then attempt to disconnect if we have an instance
       if (instance) {
@@ -191,33 +127,21 @@ export class ConnectionManager implements PnpEventEmitter {
   }
 
   async disconnect(): Promise<void> {
-    const oldStatus = this.status;
     this.status = AdapterStatus.DISCONNECTING;
-    this.emit(PnpEventType.STATUS_CHANGE, { 
-      oldStatus, 
-      newStatus: AdapterStatus.DISCONNECTING 
-    });
 
     try {
       if (this.provider) await this.provider.disconnect();
       this._resetState();
       this.status = AdapterStatus.DISCONNECTED;
-      this.emit(PnpEventType.DISCONNECTED, {});
-      this.emit(PnpEventType.STATUS_CHANGE, { 
-        oldStatus, 
-        newStatus: AdapterStatus.DISCONNECTED 
-      });
+      
+      // Call the disconnected callback if set
+      if (this.onDisconnectedCallback) {
+        await this.onDisconnectedCallback();
+      }
     } catch (error) {
-      this.emit(PnpEventType.ERROR, { 
-        error, 
-        operation: 'disconnect' 
-      });
       this._resetState();
       this.status = AdapterStatus.ERROR;
-      this.emit(PnpEventType.STATUS_CHANGE, { 
-        oldStatus, 
-        newStatus: AdapterStatus.ERROR 
-      });
+      throw error;
     }
   }
 
@@ -228,22 +152,5 @@ export class ConnectionManager implements PnpEventEmitter {
       this.account !== null &&
       this.status === AdapterStatus.CONNECTED
     );
-  }
-
-  // Event emitter methods
-  on<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
-    this.eventEmitter.on(event, listener);
-  }
-
-  off<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
-    this.eventEmitter.off(event, listener);
-  }
-
-  emit<T>(event: PnpEventType, data: T): void {
-    this.eventEmitter.emit(event, data);
-  }
-
-  removeAllListeners(event?: PnpEventType): void {
-    this.eventEmitter.removeAllListeners(event);
   }
 } 

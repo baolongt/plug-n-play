@@ -1,5 +1,3 @@
-import { PnpEventEmitter, PnpEventType } from '../events';
-
 export enum LogLevel {
   DEBUG = 'debug',
   INFO = 'info',
@@ -30,14 +28,11 @@ export class ErrorManager {
   private logLevel: LogLevel;
   private logs: LogEntry[] = [];
   private maxLogs: number = 1000;
-  private eventEmitter: PnpEventEmitter;
 
   constructor(
-    eventEmitter: PnpEventEmitter,
     logLevel: LogLevel = LogLevel.INFO,
     maxLogs: number = 1000
   ) {
-    this.eventEmitter = eventEmitter;
     this.logLevel = logLevel;
     this.maxLogs = maxLogs;
   }
@@ -56,7 +51,6 @@ export class ErrorManager {
     if (this.logs.length > this.maxLogs) {
       this.logs.shift();
     }
-    this.eventEmitter.emit(PnpEventType.LOG, entry);
   }
 
   debug(message: string, context?: Record<string, any>): void {

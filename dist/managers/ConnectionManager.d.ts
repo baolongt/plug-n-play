@@ -1,24 +1,22 @@
 import { AdapterConfig, AdapterInterface, AdapterStatus } from '../types/AdapterTypes';
 import { WalletAccount } from '../types/WalletTypes';
 import { GlobalPnpConfig } from '../types/index.d';
-import { PnpEventEmitter, PnpEventType, PnpEventListener } from '../events';
 import { ErrorManager } from './ErrorManager';
-export declare class ConnectionManager implements PnpEventEmitter {
+export declare class ConnectionManager {
     config: GlobalPnpConfig;
     adapter: AdapterConfig | null;
     provider: AdapterInterface | null;
     account: WalletAccount | null;
     status: AdapterStatus;
-    private eventEmitter;
     private logger;
+    private onConnectedCallback?;
+    private onDisconnectedCallback?;
     constructor(config: GlobalPnpConfig, logger?: ErrorManager);
+    setOnConnected(callback: () => Promise<void>): void;
+    setOnDisconnected(callback: () => Promise<void>): void;
     private _resetState;
     openChannel(): Promise<void>;
     connect(walletId?: string): Promise<WalletAccount | null>;
     disconnect(): Promise<void>;
     isAuthenticated(): boolean;
-    on<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
-    off<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
-    emit<T>(event: PnpEventType, data: T): void;
-    removeAllListeners(event?: PnpEventType): void;
 }

@@ -2,6 +2,7 @@ import { Adapter } from "../types";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import { SiwsAdapter } from "./ic/SiwsAdapter";
 import { IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter } from "./ic";
+import { getDefaultTransportConfig } from "../utils/configUtils";
 
 // Import logos
 import phantomLogo from "../../assets/phantom.webp";
@@ -85,13 +86,7 @@ export const Adapters: Record<string, Adapter.Config> = {
     adapter: OisyAdapter,
     config: {
       signerUrl: "https://oisy.com/sign",
-      transport: {
-        windowOpenerFeatures: "width=525,height=705",
-        establishTimeout: 45000,
-        disconnectTimeout: 45000,
-        statusPollingRate: 500,
-        detectNonClickEstablishment: false,
-      },
+      transport: getDefaultTransportConfig(),
     },
   },
   nfid: {
@@ -106,13 +101,7 @@ export const Adapters: Record<string, Adapter.Config> = {
       signerUrl: "https://nfid.one/rpc",
       fetchRootKey: false,
       verifyQuerySignatures: true,
-      transport: {
-        windowOpenerFeatures: "width=525,height=705",
-        establishTimeout: 45000,
-        disconnectTimeout: 45000,
-        statusPollingRate: 500,
-        detectNonClickEstablishment: false,
-      },
+      transport: getDefaultTransportConfig(),
     },
   },
   ii: {
@@ -146,4 +135,9 @@ export const Adapters: Record<string, Adapter.Config> = {
 };
 
 // Export all adapters for direct use
-export { SiwsAdapter, IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter }; 
+export { SiwsAdapter, IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter };
+
+// Export base classes for extensibility
+export { BaseAdapter } from "./BaseAdapter";
+export { BaseDelegationAdapter } from "./BaseDelegationAdapter";
+export { BaseSignerAdapter } from "./BaseSignerAdapter"; 

@@ -1,27 +1,24 @@
 import { Adapter, Wallet } from '../../types/index.d';
 import { ActorSubclass } from '@dfinity/agent';
-import { BaseAdapter } from '../BaseAdapter';
+import { Transaction, SendOptions } from '@solana/web3.js';
+import { Ed25519KeyIdentity, DelegationChain } from '@dfinity/identity';
+import { BaseDelegationAdapter } from '../BaseDelegationAdapter';
 import { SiwsAdapterConfig } from '../../types/AdapterConfigs';
 import { SplTokenBalance } from '../../managers/SplTokenManager';
-export declare class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapter.Interface {
+export declare class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     walletName: string;
     logo: string;
     readonly id: string;
     static supportedChains: Adapter.Chain[];
-    protected state: Adapter.Status;
     private solanaAdapter;
     private solanaConnection;
-    private identity;
-    private principal;
     private solanaAddress;
     private tokenManager;
-    private storage;
-    private sessionKey;
     constructor(args: Adapter.ConstructorArgs & {
         config: SiwsAdapterConfig;
     });
-    private restoreFromStorage;
-    private clearStoredSession;
+    protected onStorageRestored(sessionKey: Ed25519KeyIdentity, delegationChain: DelegationChain): Promise<void>;
+    protected onClearStoredSession(): Promise<void>;
     private createSolanaAdapter;
     private setupWalletListeners;
     private removeWalletListeners;
@@ -30,7 +27,7 @@ export declare class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implemen
     private handleSolanaError;
     isConnected(): Promise<boolean>;
     connect(): Promise<Wallet.Account>;
-    disconnect(): Promise<void>;
+    protected disconnectInternal(): Promise<void>;
     getPrincipal(): Promise<string>;
     getAccountId(): Promise<string>;
     getSolanaAddress(): Promise<string>;
@@ -51,4 +48,12 @@ export declare class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implemen
     private _getSiwsDelegation;
     private _createDelegationIdentity;
     private performSiwsLogin;
+    sendSol(toAddress: string, amountInSol: number, options?: SendOptions): Promise<string>;
+    sendSplToken(mintAddress: string, toAddress: string, amount: number, decimals: number, options?: SendOptions): Promise<string>;
+    estimateTransactionFee(transaction: Transaction): Promise<number>;
+    getTransactionStatus(signature: string): Promise<{
+        confirmed: boolean;
+        slot?: number;
+        err?: any;
+    }>;
 }

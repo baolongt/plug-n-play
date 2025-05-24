@@ -4,11 +4,10 @@ import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
 import { WalletAccount } from './types/WalletTypes';
 import { createPNPConfig } from './config';
 import { PnpState, StateResponse, StateTransition } from './managers/StateManager';
-import { PnpEventEmitter, PnpEventType, PnpEvent, PnpEventListener } from './events';
-export { createPNPConfig, PnpState, PnpEventType };
-export type { GlobalPnpConfig, PnpEventListener, StateResponse, StateTransition, PnpEvent };
+export { createPNPConfig, PnpState };
+export type { GlobalPnpConfig, StateResponse, StateTransition };
 export type { ActorSubclass, Adapter, GetActorOptions };
-export interface PnpInterface extends PnpEventEmitter {
+export interface PnpInterface {
     config: GlobalPnpConfig;
     adapter: AdapterConfig | null;
     provider: any;
@@ -26,7 +25,6 @@ export declare class PNP implements PnpInterface {
     private actorManager;
     private errorManager;
     private stateManager;
-    private eventEmitter;
     private static adapterRegistry;
     /**
      * Register a new adapter globally. Call before PNP instantiation to make available to all instances.
@@ -45,10 +43,6 @@ export declare class PNP implements PnpInterface {
     static getRegisteredAdapters(): Record<string, AdapterConfig>;
     constructor(config?: GlobalPnpConfig);
     openChannel(): Promise<void>;
-    on<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
-    off<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
-    emit<T>(event: PnpEventType, data: T): void;
-    removeAllListeners(event?: PnpEventType): void;
     get config(): GlobalPnpConfig;
     get adapter(): AdapterConfig;
     get provider(): import('./types/AdapterTypes').AdapterInterface;

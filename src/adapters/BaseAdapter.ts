@@ -24,7 +24,7 @@ export abstract class BaseAdapter<T extends AdapterSpecificConfig = AdapterSpeci
   constructor(args: Adapter.ConstructorArgs & { config: T; logger?: ErrorManager }) {
     this.config = args.config; // Store global config
     this.adapter = args.adapter; // Store adapter-specific config
-    this.logger = args.logger || new ErrorManager(null, LogLevel.INFO); // Use provided logger or create fallback
+    this.logger = args.logger || new ErrorManager(LogLevel.INFO); // Use provided logger or create fallback
   }
 
   // Common state management

@@ -8,16 +8,14 @@ import { ActorManager } from './managers/ActorManager';
 import { ConfigManager } from './managers/ConfigManager';
 import { ErrorManager, LogLevel } from './managers/ErrorManager';
 import { StateManager, PnpState, StateResponse, StateTransition } from './managers/StateManager';
-import { EventEmitter, PnpEventEmitter, PnpEventType } from './events';
-import type { PnpEvent, PnpEventListener } from './events';
 
 // Re-export config types and creation function for easier consumption
-export { createPNPConfig, PnpState, PnpEventType };
-export type { GlobalPnpConfig, PnpEventListener, StateResponse, StateTransition, PnpEvent };
+export { createPNPConfig, PnpState };
+export type { GlobalPnpConfig, StateResponse, StateTransition };
 export type { ActorSubclass, Adapter, GetActorOptions};
 
 // Define the PNP class directly here
-export interface PnpInterface extends PnpEventEmitter {
+export interface PnpInterface {
   config: GlobalPnpConfig;
   adapter: AdapterConfig | null;
   provider: any;
@@ -36,7 +34,6 @@ export class PNP implements PnpInterface {
   private actorManager: ActorManager;
   private errorManager: ErrorManager;
   private stateManager: StateManager;
-  private eventEmitter: PnpEventEmitter;
 
   // Static registry for adapters
   private static adapterRegistry: Record<string, AdapterConfig> = {};
@@ -73,13 +70,10 @@ export class PNP implements PnpInterface {
     };
     const mergedConfig = { ...config, adapters: mergedAdapters };
     
-    this.eventEmitter = new EventEmitter();
     this.errorManager = new ErrorManager(
-      this.eventEmitter,
       config.logLevel || LogLevel.INFO
     );
     this.stateManager = new StateManager(
-      this.eventEmitter,
       this.errorManager,
       {
         key: config.persistenceKey || 'pnp-state',
@@ -96,22 +90,20 @@ export class PNP implements PnpInterface {
     this.actorManager = new ActorManager(finalConfig, null);
 
     // Keep actorManager's provider in sync with connectionManager
-    this.connectionManager.on(PnpEventType.CONNECTED, async () => {
+    this.connectionManager.setOnConnected(async () => {
       try {
         await this.stateManager.transitionTo(PnpState.CONNECTED);
         this.actorManager.setProvider(this.connectionManager.provider);
-        this.emit(PnpEventType.CONNECTED, { account: this.account });
       } catch (error) {
         this.errorManager.handleError(error as Error);
       }
     });
 
-    this.connectionManager.on(PnpEventType.DISCONNECTED, async () => {
+    this.connectionManager.setOnDisconnected(async () => {
       try {
         await this.stateManager.transitionTo(PnpState.DISCONNECTED);
         this.actorManager.setProvider(null);
         this.actorManager.clearCache();
-        this.emit(PnpEventType.DISCONNECTED, {});
       } catch (error) {
         this.errorManager.handleError(error as Error);
       }
@@ -125,23 +117,6 @@ export class PNP implements PnpInterface {
 
   async openChannel(): Promise<void> {
       await this.connectionManager.openChannel();
-  }
-
-  // Event emitter methods
-  on<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
-    this.eventEmitter.on(event, listener);
-  }
-
-  off<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
-    this.eventEmitter.off(event, listener);
-  }
-
-  emit<T>(event: PnpEventType, data: T): void {
-    this.eventEmitter.emit(event, data);
-  }
-
-  removeAllListeners(event?: PnpEventType): void {
-    this.eventEmitter.removeAllListeners(event);
   }
 
   get config() {

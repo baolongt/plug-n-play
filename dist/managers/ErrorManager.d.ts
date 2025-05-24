@@ -1,4 +1,3 @@
-import { PnpEventEmitter } from '../events';
 export declare enum LogLevel {
     DEBUG = "debug",
     INFO = "info",
@@ -21,8 +20,7 @@ export declare class ErrorManager {
     private logLevel;
     private logs;
     private maxLogs;
-    private eventEmitter;
-    constructor(eventEmitter: PnpEventEmitter, logLevel?: LogLevel, maxLogs?: number);
+    constructor(logLevel?: LogLevel, maxLogs?: number);
     setLogLevel(level: LogLevel): void;
     private shouldLog;
     private addLog;
