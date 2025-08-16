@@ -59,8 +59,21 @@ export interface SiwsAdapterConfig extends GlobalPnpConfig {
     appUrl?: string;
     appIcons?: string[];
 }
-export type AdapterSpecificConfig = IIAdapterConfig | PlugAdapterConfig | NFIDAdapterConfig | OisyAdapterConfig | SiwsAdapterConfig;
+export interface StoicAdapterConfig extends GlobalPnpConfig {
+    maxTimeToLive?: bigint;
+    keyType?: 'ECDSA' | 'Ed25519';
+}
+export interface SiweAdapterConfig extends GlobalPnpConfig {
+    siweProviderCanisterId?: string;
+    providerCanisterId?: string;
+    maxTimeToLive?: bigint;
+    derivationOrigin?: string;
+}
+export type AdapterSpecificConfig = IIAdapterConfig | PlugAdapterConfig | NFIDAdapterConfig | OisyAdapterConfig | SiwsAdapterConfig | SiweAdapterConfig | StoicAdapterConfig;
 export declare function isPlugAdapterConfig(config: GlobalPnpConfig): config is PlugAdapterConfig;
 export declare function isNFIDAdapterConfig(config: GlobalPnpConfig): config is NFIDAdapterConfig;
 export declare function isOisyAdapterConfig(config: GlobalPnpConfig): config is OisyAdapterConfig;
 export declare function isSiwsAdapterConfig(config: GlobalPnpConfig): config is SiwsAdapterConfig;
+export declare function isIIAdapterConfig(config: GlobalPnpConfig): config is IIAdapterConfig;
+export declare function isStoicAdapterConfig(config: GlobalPnpConfig): config is StoicAdapterConfig;
+export declare function isSiweAdapterConfig(config: GlobalPnpConfig): config is SiweAdapterConfig;

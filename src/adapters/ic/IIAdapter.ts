@@ -9,6 +9,7 @@ import {
   createAccountFromPrincipal,
 } from "../../utils/icUtils"; // Import utility functions
 import { IIAdapterConfig } from '../../types/AdapterConfigs';
+import { isIIAdapterConfig } from '../../types/AdapterConfigs';
 
 // Extend BaseIcAdapter
 export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.Interface {
@@ -17,7 +18,11 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
   private agent: HttpAgent | null = null;
 
   constructor(args: { adapter: any; config: IIAdapterConfig }) {
+    if (!isIIAdapterConfig(args.config)) {
+      throw new Error('Invalid config for IIAdapter');
+    }
     super(args);
+    // Initialize authClient in constructor
     this.initializeAuthClient();
   }
 
@@ -40,51 +45,19 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
 
   // Use the resolved config for agent initialization
   private async initAgent(identity: Identity): Promise<void> {    
-    try {
-      // Agent settings from top-level config and nested adapter config
-      const host = this.config.hostUrl || (this.config.dfxNetwork === "local" ? "http://127.0.0.1:8080" : "https://icp0.io");
-      
-      console.log("[II] Initializing agent with host:", host);
-      
-      this.agent = HttpAgent.createSync({
-        identity,
-        host: host, 
-        // verifyQuerySignatures comes from the nested adapter config, falling back to global
-        verifyQuerySignatures: this.config.verifyQuerySignatures
-      });
-      
-      // Use utility function for fetching root keys if needed
-      console.log("fetchRootKey", this.config.fetchRootKey);
-      
-      // For local development, always fetch root key
-      const shouldFetchRootKey = this.config.fetchRootKey || this.config.dfxNetwork === "local";
-      
-      if (shouldFetchRootKey) {
-        console.log("[II] Fetching root key for local development");
-        await this.agent.fetchRootKey();
-      }
-    } catch (error) {
-      console.error("[II] Failed to initialize agent:", error);
-      throw error;
-    }
-  }
-
-  private getIdentityProvider(): string {
-    if (this.config.dfxNetwork === "local") {
-      // For local development, construct the URL with the local canister ID
-      if (!this.config.localIdentityCanisterId) {
-        console.warn("[II] Missing localIdentityCanisterId for local development");
-        // Default to the standard identity canister if not specified
-        return `http://127.0.0.1:8080/?canisterId=rdmx6-jaaaa-aaaaa-aaadq-cai#authorize`;
-      }
-      
-      // Ensure we're using the correct host for local development
-      const host = this.config.hostUrl || "http://127.0.0.1:8080";
-      return `${host}/?canisterId=${this.config.localIdentityCanisterId}#authorize`;
-    }
+    // Agent settings from top-level config and nested adapter config
+    this.agent = HttpAgent.createSync({
+      identity,
+      host: this.config.hostUrl, 
+      // verifyQuerySignatures comes from the nested adapter config, falling back to global
+      verifyQuerySignatures: this.config.verifyQuerySignatures
+    });
     
-    // For mainnet, use the standard II URL with the authorize fragment
-    return "https://identity.ic0.app/#authorize";
+    // Use utility function for fetching root keys if needed
+    await fetchRootKeyIfNeeded(
+      this.agent,
+      this.config.fetchRootKey,
+    );
   }
 
   async connect(): Promise<Wallet.Account> {
@@ -96,23 +69,12 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
         await this.initializeAuthClient();
       }
 
-      const isAuthenticated = await this.authClient!.isAuthenticated();
+      const isAuthenticated = await this.authClient.isAuthenticated();
       if (!isAuthenticated) {
-        const identityProvider = this.getIdentityProvider();
-        console.log("[II] Using identity provider:", identityProvider);
-        
-        // For local development, determine a proper derivation origin
-        let derivationOrigin = this.config.derivationOrigin;
-        if (this.config.dfxNetwork === "local" && !derivationOrigin) {
-          // Default derivation for local development
-          derivationOrigin = window.location.origin;
-          console.log("[II] Using window origin as derivation origin:", derivationOrigin);
-        }
-        
         return new Promise<Wallet.Account>((resolve, reject) => {
           this.authClient!.login({
-            derivationOrigin: derivationOrigin,
-            identityProvider: identityProvider, 
+            derivationOrigin: this.config.derivationOrigin,
+            identityProvider: this.config.iiProviderUrl, 
             maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
             onSuccess: async () => {
               try {
@@ -120,7 +82,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
                 this.setState(Adapter.Status.CONNECTED);
                 resolve(account);
               } catch (error) {
-                console.error("[II] Login continuation failed:", error);
                 this.setState(Adapter.Status.ERROR);
                 reject(error);
               }
@@ -138,7 +99,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
       this.setState(Adapter.Status.CONNECTED);
       return account;
     } catch (error) {
-      console.error("[II] Connect error:", error);
       this.setState(Adapter.Status.ERROR);
       throw error;
     }
@@ -156,12 +116,8 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
       }
 
       const principal = identity.getPrincipal();
-      console.log("[II] Got principal:", principal.toText());
 
       if (principal.isAnonymous()) {
-        // This might happen if the identity provider is misconfigured
-        // or if the user canceled the authentication flow
-        console.error("[II] Authentication failed - received anonymous principal");
         throw new Error("Login resulted in anonymous principal");
       }
       
@@ -172,7 +128,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
         throw new Error("Failed to create valid account from principal");
       }
       
-      console.log("[II] Successfully authenticated:", account.owner);
       return account;
     } catch (error) {
       console.error("[II] Error in _continueLogin:", error);
@@ -189,7 +144,7 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
   protected createActorInternal<T>(
     canisterId: string, 
     idl: any,
-    options: {
+    _options?: {
       requiresSigning?: boolean;
     }
   ): ActorSubclass<T> {

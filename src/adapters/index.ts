@@ -1,8 +1,8 @@
 import { Adapter } from "../types";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import { SiwsAdapter } from "./ic/SiwsAdapter";
-import { IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter } from "./ic";
-import { getDefaultTransportConfig } from "../utils/configUtils";
+import { IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter, StoicAdapter, SiweAdapter } from "./ic";
+import { getDefaultTransportConfig } from "../utils/configUtils"; 
 
 // Import logos
 import phantomLogo from "../../assets/phantom.webp";
@@ -13,6 +13,8 @@ import oisyLogo from "../../assets/oisy_logo.webp";
 import nfidLogo from "../../assets/nfid.webp";
 import dfinityLogo from "../../assets/dfinity.webp";
 import plugLogo from "../../assets/plug.webp";
+import stoicLogo from "../../assets/stoic.jpg";
+import metamaskLogo from "../../assets/metamask.png";
 
 // Define the unified adapters map
 export const Adapters: Record<string, Adapter.Config> = {
@@ -132,10 +134,32 @@ export const Adapters: Record<string, Adapter.Config> = {
       delegationTimeout: BigInt(7 * 24 * 60 * 60 * 1000 * 1000 * 1000),
     },
   },
+  stoic: {
+    id: 'stoic',
+    enabled: true,
+    walletName: "Stoic",
+    logo: stoicLogo,
+    website: "https://www.stoicwallet.com",
+    chain: 'ICP',
+    adapter: StoicAdapter,
+    config: {
+      maxTimeToLive: BigInt(8 * 60 * 60 * 1000 * 1000 * 1000), // 8 hours
+      keyType: 'ECDSA' as const,
+    },
+  },
+  metamaskSiwe: {
+    id: 'metamaskSiwe',
+    enabled: true,
+    walletName: "Metamask",
+    logo: metamaskLogo,
+    website: "https://metamask.io",
+    chain: 'ETH',
+    adapter: SiweAdapter,
+  }
 };
 
 // Export all adapters for direct use
-export { SiwsAdapter, IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter };
+export { SiwsAdapter, IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter, StoicAdapter };
 
 // Export base classes for extensibility
 export { BaseAdapter } from "./BaseAdapter";

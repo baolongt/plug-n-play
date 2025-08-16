@@ -11,11 +11,10 @@ export declare class IIAdapter extends BaseAdapter<IIAdapterConfig> implements A
     });
     private initializeAuthClient;
     private initAgent;
-    private getIdentityProvider;
     connect(): Promise<Wallet.Account>;
     private _continueLogin;
     isConnected(): Promise<boolean>;
-    protected createActorInternal<T>(canisterId: string, idl: any, options: {
+    protected createActorInternal<T>(canisterId: string, idl: any, _options?: {
         requiresSigning?: boolean;
     }): ActorSubclass<T>;
     getPrincipal(): Promise<string>;

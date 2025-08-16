@@ -19,7 +19,8 @@ import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
 import { 
   Connection, 
   PublicKey, 
-  Transaction, 
+  Transaction,
+  TransactionInstruction,
   SystemProgram, 
   LAMPORTS_PER_SOL,
   sendAndConfirmTransaction,
@@ -77,6 +78,16 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     this.logo = args.adapter.logo;
     this.config = args.config;
     
+    this.initializeConnection();
+    
+    if (isBrowser && this.id !== "walletconnectSiws") {
+      this.initializeSolanaAdapter();
+    }
+
+    this.setState(Adapter.Status.READY);
+  }
+
+  private initializeConnection(): void {
     const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
     const endpoint =
       network === WalletAdapterNetwork.Mainnet
@@ -84,14 +95,40 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
         : "https://api.devnet.solana.com";
     this.solanaConnection = new Connection(endpoint);
     this.tokenManager = new TokenManager(this.solanaConnection);
+  }
 
-    // Only initialize the adapter if we're in a browser environment
-    if (isBrowser && this.id !== "walletconnectSiws") {
+  private initializeSolanaAdapter(): void {
+    const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
+    this.solanaAdapter = this.createSolanaAdapter(network);
+    this.setupWalletListeners();
+  }
+
+  private async ensureSolanaAdapter(): Promise<SolanaAdapter> {
+    if (!this.solanaAdapter) {
+      const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
       this.solanaAdapter = this.createSolanaAdapter(network);
       this.setupWalletListeners();
     }
+    return this.solanaAdapter;
+  }
 
-    this.setState(Adapter.Status.READY);
+  private async ensureConnected(): Promise<SolanaAdapter> {
+    const adapter = await this.ensureSolanaAdapter();
+    if (!adapter.connected || !adapter.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+    return adapter;
+  }
+
+  private async buildTransaction(
+    instructions: TransactionInstruction[],
+    feePayer: PublicKey
+  ): Promise<Transaction> {
+    const transaction = new Transaction().add(...instructions);
+    const { blockhash } = await this.solanaConnection.getLatestBlockhash();
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = feePayer;
+    return transaction;
   }
 
   // Implement abstract methods from BaseDelegationAdapter
@@ -241,14 +278,7 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
       }
     }
 
-    if (!this.solanaAdapter) {
-      const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
-      this.logger.debug(`Creating Solana adapter for network: ${network}`, {
-        wallet: this.walletName,
-      });
-      this.solanaAdapter = this.createSolanaAdapter(network);
-      this.setupWalletListeners();
-    }
+    await this.ensureSolanaAdapter();
 
     // Simplify state management
     const validStates = [Adapter.Status.READY, Adapter.Status.INIT, Adapter.Status.DISCONNECTED];
@@ -459,21 +489,21 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
   }
 
   async getSolBalance(): Promise<{ amount: number; usdValue?: number }> {
-    if (!this.solanaAdapter) return { amount: 0, usdValue: 0 };
-    const adapter = await this.solanaAdapter;
-    if (!adapter.connected || !adapter.publicKey) {
-      throw new Error("Solana wallet not connected or public key unavailable.");
+    try {
+      const adapter = await this.ensureConnected();
+      return this.tokenManager.getSolBalance(adapter.publicKey!);
+    } catch {
+      return { amount: 0, usdValue: 0 };
     }
-    return this.tokenManager.getSolBalance(adapter.publicKey);
   }
 
   async getSplTokenBalances(): Promise<SplTokenBalance[]> {
-    if (!this.solanaAdapter) return [];
-    const adapter = await this.solanaAdapter;
-    if (!adapter.connected || !adapter.publicKey) {
-      throw new Error("Solana wallet not connected or public key unavailable.");
+    try {
+      const adapter = await this.ensureConnected();
+      return this.tokenManager.getSplTokenBalances(adapter.publicKey!);
+    } catch {
+      return [];
     }
-    return this.tokenManager.getSplTokenBalances(adapter.publicKey);
   }
 
   private createSiwsProviderActor(identity?: Identity): SiwsProviderActor {
@@ -494,23 +524,8 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     });
   }
 
-  private async _prepareLogin(
-    actor: SiwsProviderActor,
-    address: string,
-  ): Promise<any> {
-    const prepareResult = await actor.siws_prepare_login(address);
 
-    if ("Err" in prepareResult) {
-      const errorMsg = `Prepare login error: ${JSON.stringify(prepareResult.Err)}`;
-      this.logger.error(errorMsg, new Error(errorMsg));
-      throw new Error(
-        `SIWS Prepare Login failed: ${JSON.stringify(prepareResult.Err)}`,
-      );
-    }
-    return prepareResult.Ok;
-  }
-
-  private async _signSiwsMessage(siwsMessage: any): Promise<string> {
+  private async signSiwsMessage(siwsMessage: any): Promise<string> {
     const messageText = formatSiwsMessage(siwsMessage);
     const messageBytes = new TextEncoder().encode(messageText);
 
@@ -573,56 +588,8 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     }
   }
 
-  private _generateSessionIdentity(): {
-    sessionIdentity: Ed25519KeyIdentity;
-    sessionPublicKeyDer: ArrayBuffer;
-  } {
-    const sessionIdentity = Ed25519KeyIdentity.generate();
-    const sessionPublicKeyDer = sessionIdentity.getPublicKey().toDer();
-    return { sessionIdentity, sessionPublicKeyDer };
-  }
 
-  private async _loginWithSiws(
-    actor: SiwsProviderActor,
-    signature: string,
-    address: string,
-    sessionPublicKeyDer: ArrayBuffer,
-    siwsMessage: any,
-  ): Promise<any> {
-    const loginResult = await actor.siws_login(
-      signature,
-      address,
-      new Uint8Array(sessionPublicKeyDer),
-      siwsMessage.nonce,
-    );
-    if ("Err" in loginResult) {
-      const errorMsg = `SIWS Login failed: ${JSON.stringify(loginResult.Err)}`;
-      this.logger.error(errorMsg, new Error(errorMsg));
-      throw new Error(errorMsg);
-    }
-    return loginResult.Ok;
-  }
-
-  private async _getSiwsDelegation(
-    actor: SiwsProviderActor,
-    address: string,
-    sessionPublicKeyDer: ArrayBuffer,
-    expiration: bigint,
-  ): Promise<any> {
-    const delegationResult = await actor.siws_get_delegation(
-      address,
-      new Uint8Array(sessionPublicKeyDer),
-      expiration,
-    );
-    if ("Err" in delegationResult) {
-      const errorMsg = `SIWS Get Delegation failed: ${JSON.stringify(delegationResult.Err)}`;
-      this.logger.error(errorMsg, new Error(errorMsg));
-      throw new Error(errorMsg);
-    }
-    return delegationResult.Ok;
-  }
-
-  private _createDelegationIdentity(
+  private createDelegationIdentity(
     signedDelegation: any,
     sessionIdentity: Ed25519KeyIdentity,
     userCanisterPublicKeyDer: ArrayBuffer,
@@ -658,78 +625,95 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
   private async performSiwsLogin(
     address: string,
   ): Promise<{ identity: DelegationIdentity; sessionKey: Ed25519KeyIdentity }> {
-    const anonSiwsActor = this.createSiwsProviderActor();
-    const siwsMessage = await this._prepareLogin(anonSiwsActor, address);
-    const signature = await this._signSiwsMessage(siwsMessage);
+    const actor = this.createSiwsProviderActor();
     
-    // sessionIdentity here is the specific Ed25519KeyIdentity for this session
-    const { sessionIdentity, sessionPublicKeyDer } = 
-      this._generateSessionIdentity(); 
-      
-    const loginDetails = await this._loginWithSiws(
-      anonSiwsActor,
+    // Step 1: Prepare and sign message
+    const { siwsMessage, signature } = await this.prepareAndSignMessage(actor, address);
+    
+    // Step 2: Generate session identity
+    const sessionIdentity = Ed25519KeyIdentity.generate();
+    const sessionPublicKeyDer = sessionIdentity.getPublicKey().toDer();
+    
+    // Step 3: Login and get delegation
+    const loginResult = await actor.siws_login(
       signature,
       address,
-      sessionPublicKeyDer,
-      siwsMessage,
+      new Uint8Array(sessionPublicKeyDer),
+      siwsMessage.nonce,
     );
-
-    const signedDelegation = await this._getSiwsDelegation(
-      anonSiwsActor,
+    
+    if ("Err" in loginResult) {
+      throw new Error(`SIWS Login failed: ${JSON.stringify(loginResult.Err)}`);
+    }
+    
+    // Step 4: Get signed delegation
+    const delegationResult = await actor.siws_get_delegation(
       address,
-      sessionPublicKeyDer,
-      loginDetails.expiration,
+      new Uint8Array(sessionPublicKeyDer),
+      loginResult.Ok.expiration,
     );
-
-    // This is the DelegationIdentity
-    const delegationIdentity = this._createDelegationIdentity(
-      signedDelegation,
-      sessionIdentity, // Pass the Ed25519KeyIdentity here
-      loginDetails.user_canister_pubkey.slice().buffer,
+    
+    if ("Err" in delegationResult) {
+      throw new Error(`SIWS Get Delegation failed: ${JSON.stringify(delegationResult.Err)}`);
+    }
+    
+    // Step 5: Create delegation identity
+    const delegationIdentity = this.createDelegationIdentity(
+      delegationResult.Ok,
+      sessionIdentity,
+      new Uint8Array(loginResult.Ok.user_canister_pubkey).buffer as ArrayBuffer,
     );
 
     return { identity: delegationIdentity, sessionKey: sessionIdentity };
   }
 
-  // Send SOL to another address
+  private async prepareAndSignMessage(
+    actor: SiwsProviderActor,
+    address: string
+  ): Promise<{ siwsMessage: any; signature: string }> {
+    // Prepare login
+    const prepareResult = await actor.siws_prepare_login(address);
+    if ("Err" in prepareResult) {
+      throw new Error(`SIWS Prepare Login failed: ${JSON.stringify(prepareResult.Err)}`);
+    }
+    
+    // Sign message
+    const signature = await this.signSiwsMessage(prepareResult.Ok);
+    
+    return { siwsMessage: prepareResult.Ok, signature };
+  }
+
   async sendSol(
     toAddress: string,
     amountInSol: number,
     options?: SendOptions
   ): Promise<string> {
-    if (!this.solanaAdapter) {
-      throw new Error("Solana adapter not initialized");
-    }
-    
-    const adapter = await this.solanaAdapter;
-    if (!adapter.connected || !adapter.publicKey) {
-      throw new Error("Wallet not connected");
-    }
+    const adapter = await this.ensureConnected();
 
     try {
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: adapter.publicKey,
-          toPubkey: new PublicKey(toAddress),
-          lamports: Math.floor(amountInSol * LAMPORTS_PER_SOL),
-        })
+      const transferInstruction = SystemProgram.transfer({
+        fromPubkey: adapter.publicKey!,
+        toPubkey: new PublicKey(toAddress),
+        lamports: Math.floor(amountInSol * LAMPORTS_PER_SOL),
+      });
+
+      const transaction = await this.buildTransaction(
+        [transferInstruction],
+        adapter.publicKey!
       );
 
-      // Get recent blockhash
-      const { blockhash } = await this.solanaConnection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = adapter.publicKey;
-
-      // Sign and send transaction
       const signature = await adapter.sendTransaction(
         transaction,
         this.solanaConnection,
         options
       );
 
-      // Confirm transaction
-      await this.solanaConnection.confirmTransaction(signature, 'confirmed');
-
+      const latestBlockhash = await this.solanaConnection.getLatestBlockhash();
+      await this.solanaConnection.confirmTransaction({
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      });
       return signature;
     } catch (error) {
       this.logger.error(`Failed to send SOL`, error as Error, {
@@ -741,7 +725,6 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     }
   }
 
-  // Send SPL tokens to another address
   async sendSplToken(
     mintAddress: string,
     toAddress: string,
@@ -749,29 +732,21 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     decimals: number,
     options?: SendOptions
   ): Promise<string> {
-    if (!this.solanaAdapter) {
-      throw new Error("Solana adapter not initialized");
-    }
-    
-    const adapter = await this.solanaAdapter;
-    if (!adapter.connected || !adapter.publicKey) {
-      throw new Error("Wallet not connected");
-    }
+    const adapter = await this.ensureConnected();
 
     try {
       const mint = new PublicKey(mintAddress);
       const recipient = new PublicKey(toAddress);
+      const instructions: TransactionInstruction[] = [];
 
-      // Get sender's token account
       const senderTokenAccount = await getAssociatedTokenAddress(
         mint,
-        adapter.publicKey,
+        adapter.publicKey!,
         false,
         TOKEN_PROGRAM_ID,
         ASSOCIATED_TOKEN_PROGRAM_ID
       );
 
-      // Get recipient's token account
       const recipientTokenAccount = await getAssociatedTokenAddress(
         mint,
         recipient,
@@ -779,8 +754,6 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
         TOKEN_PROGRAM_ID,
         ASSOCIATED_TOKEN_PROGRAM_ID
       );
-
-      const transaction = new Transaction();
 
       // Check if recipient token account exists
       try {
@@ -792,10 +765,9 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
         );
       } catch (error) {
         if (error instanceof TokenAccountNotFoundError) {
-          // Create associated token account for recipient
-          transaction.add(
+          instructions.push(
             createAssociatedTokenAccountInstruction(
-              adapter.publicKey,
+              adapter.publicKey!,
               recipientTokenAccount,
               recipient,
               mint,
@@ -808,34 +780,36 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
         }
       }
 
-      // Create transfer instruction
+      // Add transfer instruction
       const transferAmount = Math.floor(amount * Math.pow(10, decimals));
-      transaction.add(
+      instructions.push(
         createTransferInstruction(
           senderTokenAccount,
           recipientTokenAccount,
-          adapter.publicKey,
+          adapter.publicKey!,
           transferAmount,
           [],
           TOKEN_PROGRAM_ID
         )
       );
 
-      // Get recent blockhash
-      const { blockhash } = await this.solanaConnection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = adapter.publicKey;
+      const transaction = await this.buildTransaction(
+        instructions,
+        adapter.publicKey!
+      );
 
-      // Sign and send transaction
       const signature = await adapter.sendTransaction(
         transaction,
         this.solanaConnection,
         options
       );
 
-      // Confirm transaction
-      await this.solanaConnection.confirmTransaction(signature, 'confirmed');
-
+      const latestBlockhash = await this.solanaConnection.getLatestBlockhash();
+      await this.solanaConnection.confirmTransaction({
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      });
       return signature;
     } catch (error) {
       this.logger.error(`Failed to send SPL token`, error as Error, {
@@ -849,23 +823,15 @@ export class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig> {
     }
   }
 
-  // Helper method to estimate transaction fees
   async estimateTransactionFee(
     transaction: Transaction
   ): Promise<number> {
-    if (!this.solanaAdapter) {
-      throw new Error("Solana adapter not initialized");
-    }
-    
-    const adapter = await this.solanaAdapter;
-    if (!adapter.connected || !adapter.publicKey) {
-      throw new Error("Wallet not connected");
-    }
+    const adapter = await this.ensureConnected();
 
     try {
       const { blockhash } = await this.solanaConnection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
-      transaction.feePayer = adapter.publicKey;
+      transaction.feePayer = adapter.publicKey!;
 
       const message = transaction.compileMessage();
       const fee = await this.solanaConnection.getFeeForMessage(message, 'confirmed');

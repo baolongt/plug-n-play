@@ -66,13 +66,27 @@ export interface SiwsAdapterConfig extends GlobalPnpConfig {
   appIcons?: string[];
 }
 
+export interface StoicAdapterConfig extends GlobalPnpConfig {
+  maxTimeToLive?: bigint;
+  keyType?: 'ECDSA' | 'Ed25519';
+}
+
+export interface SiweAdapterConfig extends GlobalPnpConfig {
+  siweProviderCanisterId?: string;
+  providerCanisterId?: string;
+  maxTimeToLive?: bigint;
+  derivationOrigin?: string;
+}
+
 // Union type for all adapter configs
 export type AdapterSpecificConfig = 
   | IIAdapterConfig 
   | PlugAdapterConfig 
   | NFIDAdapterConfig 
   | OisyAdapterConfig 
-  | SiwsAdapterConfig;
+  | SiwsAdapterConfig
+  | SiweAdapterConfig
+  | StoicAdapterConfig;
 
 export function isPlugAdapterConfig(config: GlobalPnpConfig): config is PlugAdapterConfig {
   return 'whitelist' in config || 'host' in config;
@@ -88,4 +102,16 @@ export function isOisyAdapterConfig(config: GlobalPnpConfig): config is OisyAdap
 
 export function isSiwsAdapterConfig(config: GlobalPnpConfig): config is SiwsAdapterConfig {
   return 'providerCanisterId' in config || 'signInMessage' in config;
+}
+
+export function isIIAdapterConfig(config: GlobalPnpConfig): config is IIAdapterConfig {
+  return 'localIdentityCanisterId' in config || 'iiProviderUrl' in config || 'iiProviderOrigin' in config;
+}
+
+export function isStoicAdapterConfig(config: GlobalPnpConfig): config is StoicAdapterConfig {
+  return 'keyType' in config && (config.keyType === 'ECDSA' || config.keyType === 'Ed25519');
+}
+
+export function isSiweAdapterConfig(config: GlobalPnpConfig): config is SiweAdapterConfig {
+  return 'siweProviderCanisterId' in config;
 } 

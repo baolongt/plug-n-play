@@ -17,6 +17,11 @@ export declare class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig
     constructor(args: Adapter.ConstructorArgs & {
         config: SiwsAdapterConfig;
     });
+    private initializeConnection;
+    private initializeSolanaAdapter;
+    private ensureSolanaAdapter;
+    private ensureConnected;
+    private buildTransaction;
     protected onStorageRestored(sessionKey: Ed25519KeyIdentity, delegationChain: DelegationChain): Promise<void>;
     protected onClearStoredSession(): Promise<void>;
     private createSolanaAdapter;
@@ -41,13 +46,10 @@ export declare class SiwsAdapter extends BaseDelegationAdapter<SiwsAdapterConfig
     }>;
     getSplTokenBalances(): Promise<SplTokenBalance[]>;
     private createSiwsProviderActor;
-    private _prepareLogin;
-    private _signSiwsMessage;
-    private _generateSessionIdentity;
-    private _loginWithSiws;
-    private _getSiwsDelegation;
-    private _createDelegationIdentity;
+    private signSiwsMessage;
+    private createDelegationIdentity;
     private performSiwsLogin;
+    private prepareAndSignMessage;
     sendSol(toAddress: string, amountInSol: number, options?: SendOptions): Promise<string>;
     sendSplToken(mintAddress: string, toAddress: string, amount: number, decimals: number, options?: SendOptions): Promise<string>;
     estimateTransactionFee(transaction: Transaction): Promise<number>;

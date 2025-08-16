@@ -2,4 +2,6 @@ import { IIAdapter } from './IIAdapter';
 import { PlugAdapter } from './PlugAdapter';
 import { NFIDAdapter } from './NFIDAdapter';
 import { OisyAdapter } from './OisyAdapter';
-export { IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter };
+import { StoicAdapter } from './StoicAdapter';
+import { SiweAdapter } from './SiweAdapter';
+export { IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter, StoicAdapter, SiweAdapter };
