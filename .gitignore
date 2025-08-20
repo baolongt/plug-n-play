@@ -34,7 +34,6 @@ typings/
 sw.*
 .DS_Store
 *.swp
-package-lock.json
 yarn.lock
 .vscode
 .vscode/*
