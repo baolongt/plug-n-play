@@ -2946,9 +2946,17 @@ class PerformanceMonitor {
     console.groupEnd();
   }
 }
-const globalPerformanceMonitor = new PerformanceMonitor(
-  typeof window !== "undefined" && window.location.hostname === "localhost"
-);
+let _globalPerformanceMonitor = null;
+const globalPerformanceMonitor = new Proxy({}, {
+  get(target, prop, receiver) {
+    if (!_globalPerformanceMonitor) {
+      _globalPerformanceMonitor = new PerformanceMonitor(
+        typeof window !== "undefined" && window.location?.hostname === "localhost"
+      );
+    }
+    return Reflect.get(_globalPerformanceMonitor, prop, _globalPerformanceMonitor);
+  }
+});
 class ActorManager {
   constructor(config, provider = null) {
     this.config = config;
@@ -3316,25 +3324,38 @@ class StateManager {
 const _PNP = class _PNP {
   /**
    * Register a new adapter globally. Call before PNP instantiation to make available to all instances.
-   * @param id Adapter id (unique key)
-   * @param config AdapterConfig
+   * @param id - Adapter id (unique key)
+   * @param config - Adapter configuration object
+   * @example
+   * ```typescript
+   * PNP.registerAdapter('customWallet', {
+   *   label: 'Custom Wallet',
+   *   enabled: true,
+   *   adapterClass: CustomWalletAdapter
+   * });
+   * ```
    */
   static registerAdapter(id, config) {
     _PNP.adapterRegistry[id] = config;
   }
   /**
    * Unregister an adapter by id.
-   * @param id Adapter id
+   * @param id - Adapter id to remove
    */
   static unregisterAdapter(id) {
     delete _PNP.adapterRegistry[id];
   }
   /**
    * Get all registered adapters.
+   * @returns Object containing all registered adapters
    */
   static getRegisteredAdapters() {
     return { ..._PNP.adapterRegistry };
   }
+  /**
+   * Creates a new PNP instance.
+   * @param config - Configuration object for PNP
+   */
   constructor(config = {}) {
     const mergedAdapters = {
       ..._PNP.adapterRegistry,
@@ -3387,24 +3408,69 @@ const _PNP = class _PNP {
       this.errorManager.handleError(error);
     });
   }
+  /**
+   * Opens authentication channel for Safari compatibility.
+   * Must be called before connect() in Safari to prevent popup blocking.
+   * @returns Promise that resolves when channel is opened
+   * @example
+   * ```typescript
+   * // Safari requires channel opening before user action completes
+   * button.onclick = async () => {
+   *   await pnp.openChannel(); // Initialize AuthClient early
+   *   await pnp.connect('ii'); // Popup opens without blocking
+   * };
+   * ```
+   */
   async openChannel() {
     await this.connectionManager.openChannel();
   }
+  /**
+   * Get the current configuration object.
+   * @returns {GlobalPnpConfig} Current configuration
+   */
   get config() {
     return this.configManager.getConfig();
   }
+  /**
+   * Get the currently active adapter.
+   * @returns {AdapterConfig | null} Active adapter or null if not connected
+   */
   get adapter() {
     return this.connectionManager.adapter;
   }
+  /**
+   * Get the current wallet provider instance.
+   * @returns {any} Provider instance or null
+   */
   get provider() {
     return this.connectionManager.provider;
   }
+  /**
+   * Get the connected wallet account details.
+   * @returns {WalletAccount | null} Account details or null if not connected
+   */
   get account() {
     return this.connectionManager.account;
   }
+  /**
+   * Get the current connection status.
+   * @returns {any} Connection status
+   */
   get status() {
     return this.connectionManager.status;
   }
+  /**
+   * Connect to a wallet adapter.
+   * @param walletId - Optional wallet adapter ID to connect to
+   * @returns Connected account or null
+   * @throws If connection fails
+   * @example
+   * ```typescript
+   * // Connect to Internet Identity
+   * const account = await pnp.connect('ii');
+   * console.log('Connected:', account.principal);
+   * ```
+   */
   async connect(walletId) {
     const timingKey = globalPerformanceMonitor.startTiming("connection", walletId);
     try {
@@ -3425,6 +3491,11 @@ const _PNP = class _PNP {
       throw error;
     }
   }
+  /**
+   * Disconnect from the current wallet.
+   * @returns Promise that resolves when disconnected
+   * @throws If disconnection fails
+   */
   async disconnect() {
     try {
       await this.stateManager.transitionTo(PnpState.DISCONNECTING);
@@ -3437,9 +3508,36 @@ const _PNP = class _PNP {
       throw error;
     }
   }
+  /**
+   * Get an actor for interacting with a canister.
+   * @template T - Actor interface type
+   * @param {GetActorOptions} options - Actor creation options
+   * @returns {ActorSubclass<T>} Actor instance
+   * @example
+   * ```typescript
+   * const actor = pnp.getActor<MyCanisterInterface>({
+   *   canisterId: 'ryjl3-tyaaa-aaaaa-aaaba-cai',
+   *   idl: MyCanisterIDL
+   * });
+   * ```
+   */
   getActor(options) {
     return this.actorManager.getActor(options);
   }
+  /**
+   * Get an ICRC actor for token operations.
+   * @template T - Actor interface type
+   * @param {string} canisterId - Canister ID of the ICRC token
+   * @param {Object} [options] - Optional configuration
+   * @param {boolean} [options.anon=false] - Use anonymous actor
+   * @param {boolean} [options.requiresSigning=false] - Require signing capability
+   * @returns {ActorSubclass<T>} ICRC actor instance
+   * @example
+   * ```typescript
+   * const tokenActor = pnp.getIcrcActor('ryjl3-tyaaa-aaaaa-aaaba-cai');
+   * const balance = await tokenActor.icrc1_balance_of({ owner: principal, subaccount: [] });
+   * ```
+   */
   getIcrcActor(canisterId, options) {
     const anon = options?.anon ?? false;
     const requiresSigning = options?.requiresSigning ?? false;
@@ -3451,9 +3549,24 @@ const _PNP = class _PNP {
     }
     return this.actorManager.getActor({ canisterId, idl: ICRC2_IDL, anon: false, requiresSigning });
   }
+  /**
+   * Check if user is authenticated with a wallet.
+   * @returns {boolean} True if authenticated, false otherwise
+   */
   isAuthenticated() {
     return this.connectionManager.isAuthenticated();
   }
+  /**
+   * Get list of enabled wallet adapters.
+   * @returns {AdapterConfig[]} Array of enabled adapter configurations
+   * @example
+   * ```typescript
+   * const wallets = pnp.getEnabledWallets();
+   * wallets.forEach(wallet => {
+   *   console.log(`${wallet.label}: ${wallet.id}`);
+   * });
+   * ```
+   */
   getEnabledWallets() {
     return Object.entries(this.config.adapters).filter(([_2, wallet]) => wallet?.enabled !== false).map(([id, wallet]) => ({
       ...wallet,
@@ -3462,7 +3575,11 @@ const _PNP = class _PNP {
     }));
   }
   /**
-   * Get performance metrics and cache statistics
+   * Get performance metrics and cache statistics.
+   * @returns {Object} Performance statistics including cache stats, metrics, and timings
+   * @returns {Object} returns.cache - Actor cache statistics
+   * @returns {Object} returns.performance - Performance metrics
+   * @returns {Object} returns.timings - Timing report
    */
   getPerformanceStats() {
     return {

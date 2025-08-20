@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-ethereum",
-  "version": "0.0.1-beta.4",
+  "version": "0.0.1-beta.5",
   "description": "Ethereum wallet adapter for PNP (Sign-In with Ethereum)",
   "main": "dist/index.js",
   "module": "dist/index.es.js",

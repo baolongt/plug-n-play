@@ -230,7 +230,16 @@ export class PerformanceMonitor {
   }
 }
 
-// Global performance monitor instance
-export const globalPerformanceMonitor = new PerformanceMonitor(
-  typeof window !== 'undefined' && window.location.hostname === 'localhost'
-);
+// Global performance monitor instance - lazy initialization to avoid SSR issues
+let _globalPerformanceMonitor: PerformanceMonitor | null = null;
+
+export const globalPerformanceMonitor: PerformanceMonitor = new Proxy({} as PerformanceMonitor, {
+  get(target, prop, receiver) {
+    if (!_globalPerformanceMonitor) {
+      _globalPerformanceMonitor = new PerformanceMonitor(
+        typeof window !== 'undefined' && window.location?.hostname === 'localhost'
+      );
+    }
+    return Reflect.get(_globalPerformanceMonitor, prop, _globalPerformanceMonitor);
+  }
+});
