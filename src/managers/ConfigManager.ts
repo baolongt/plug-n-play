@@ -1,5 +1,4 @@
 import { GlobalPnpConfig } from '../types/index.d';
-import { createPNPConfig } from '../config';
 
 export interface ConfigValidationError {
   field: string;
@@ -9,8 +8,8 @@ export interface ConfigValidationError {
 export class ConfigManager {
   private config: GlobalPnpConfig;
 
-  constructor(userConfig: GlobalPnpConfig = {}) {
-    this.config = createPNPConfig(userConfig);
+  constructor(config: GlobalPnpConfig) {
+    this.config = config;
     this.validateConfig(this.config);
   }
 
@@ -19,7 +18,7 @@ export class ConfigManager {
   }
 
   updateConfig(partialConfig: Partial<GlobalPnpConfig>) {
-    const newConfig = createPNPConfig({ ...this.config, ...partialConfig });
+    const newConfig = { ...this.config, ...partialConfig };
     
     // Validate before updating
     const validationResult = this.validateConfig(newConfig);

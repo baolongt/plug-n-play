@@ -88,30 +88,27 @@ export type AdapterSpecificConfig =
   | SiweAdapterConfig
   | StoicAdapterConfig;
 
-export function isPlugAdapterConfig(config: GlobalPnpConfig): config is PlugAdapterConfig {
-  return 'whitelist' in config || 'host' in config;
+// Generic type guard factory
+function createTypeGuard<T extends GlobalPnpConfig>(
+  ...keys: (keyof T)[]
+): (config: unknown) => config is T {
+  return (config: unknown): config is T => {
+    if (!config || typeof config !== 'object') return false;
+    return keys.some(key => key in config);
+  };
 }
 
-export function isNFIDAdapterConfig(config: GlobalPnpConfig): config is NFIDAdapterConfig {
-  return 'appName' in config || 'logoUrl' in config;
-}
-
-export function isOisyAdapterConfig(config: GlobalPnpConfig): config is OisyAdapterConfig {
-  return 'appName' in config || 'logoUrl' in config;
-}
-
-export function isSiwsAdapterConfig(config: GlobalPnpConfig): config is SiwsAdapterConfig {
-  return 'providerCanisterId' in config || 'signInMessage' in config;
-}
-
-export function isIIAdapterConfig(config: GlobalPnpConfig): config is IIAdapterConfig {
-  return 'localIdentityCanisterId' in config || 'iiProviderUrl' in config || 'iiProviderOrigin' in config;
-}
-
-export function isStoicAdapterConfig(config: GlobalPnpConfig): config is StoicAdapterConfig {
-  return 'keyType' in config && (config.keyType === 'ECDSA' || config.keyType === 'Ed25519');
-}
-
-export function isSiweAdapterConfig(config: GlobalPnpConfig): config is SiweAdapterConfig {
-  return 'siweProviderCanisterId' in config;
-} 
+// Simplified type guards using factory
+export const isPlugAdapterConfig = createTypeGuard<PlugAdapterConfig>('whitelist', 'host');
+export const isNFIDAdapterConfig = createTypeGuard<NFIDAdapterConfig>('appName', 'logoUrl');
+export const isOisyAdapterConfig = createTypeGuard<OisyAdapterConfig>('appName', 'logoUrl');
+export const isSiwsAdapterConfig = createTypeGuard<SiwsAdapterConfig>('providerCanisterId', 'signInMessage');
+// Accept either explicit II-specific fields or the common GlobalPnpConfig keys (e.g., 'hostUrl')
+export const isIIAdapterConfig = createTypeGuard<IIAdapterConfig>(
+  'localIdentityCanisterId',
+  'iiProviderUrl',
+  'iiProviderOrigin',
+  'hostUrl'
+);
+export const isSiweAdapterConfig = createTypeGuard<SiweAdapterConfig>('siweProviderCanisterId');
+export const isStoicAdapterConfig = createTypeGuard<StoicAdapterConfig>('keyType'); 

@@ -2,10 +2,11 @@ import { Principal } from "@dfinity/principal";
 import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
-import { BaseAdapter } from "./BaseAdapter";
+import { BaseAdapter, AdapterConstructorArgs } from "./BaseAdapter";
 import { AdapterSpecificConfig } from "../types/AdapterConfigs";
 import { Adapter, Wallet } from "../types/index.d";
-import { createAccountFromPrincipal, withRetry } from "../utils/icUtils";
+import { createAccountFromPrincipal } from "../utils";
+import { withTimeout, DEFAULT_TIMEOUTS } from "../utils/timeout";
 
 /**
  * Base class for adapters that use the Signer/SignerAgent pattern
@@ -16,8 +17,10 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   protected signerAgent: SignerAgent<Signer> | null = null;
   protected transport: any = null;
   protected principalStorageKey: string;
+  private connectionAbortController: AbortController | null = null;
+  private windowFocusHandler: (() => void) | null = null;
 
-  constructor(args: any) {
+  constructor(args: AdapterConstructorArgs<T>) {
     super(args);
     this.principalStorageKey = `${this.adapter.id}_principal`;
   }
@@ -70,18 +73,50 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   }
 
   protected async connectWithAccounts(): Promise<Principal> {
-    const accounts = await withRetry(() => this.signerAgent!.signer.accounts());
-    if (!accounts || accounts.length === 0) {
-      await this.disconnect();
-      throw new Error(`No accounts returned from ${this.adapter.walletName}`);
-    }
+    // Create an abort controller for this connection attempt
+    this.connectionAbortController = new AbortController();
+    
+    // Set up window focus detection to cancel if user closes popup
+    const focusPromise = new Promise<never>((_, reject) => {
+      this.windowFocusHandler = () => {
+        // Remove listener immediately to prevent multiple triggers
+        window.removeEventListener('focus', this.windowFocusHandler!);
+        this.windowFocusHandler = null;
+        reject(new Error('Connection cancelled - popup window was closed'));
+      };
+      window.addEventListener('focus', this.windowFocusHandler);
+    });
+    
+    try {
+      // Race between getting accounts, detecting window focus, and timeout
+      const accounts = await withTimeout(
+        Promise.race([
+          this.signerAgent!.signer.accounts(),
+          focusPromise
+        ]),
+        DEFAULT_TIMEOUTS.authTimeout!,
+        `${this.adapter.walletName} connection timed out after ${DEFAULT_TIMEOUTS.authTimeout! / 1000}s`
+      );
+      
+      if (!accounts || accounts.length === 0) {
+        await this.disconnect();
+        throw new Error(`No accounts returned from ${this.adapter.walletName}`);
+      }
 
-    const principal = accounts[0].owner;
-    localStorage.setItem(this.principalStorageKey, principal.toText());
-    if (this.signerAgent) {
-      this.signerAgent.replaceAccount(principal);
+      const principal = accounts[0].owner;
+      localStorage.setItem(this.principalStorageKey, principal.toText());
+      if (this.signerAgent) {
+        this.signerAgent.replaceAccount(principal);
+      }
+      return principal;
+    } finally {
+      // Clean up the focus listener if it's still attached
+      if (this.windowFocusHandler) {
+        window.removeEventListener('focus', this.windowFocusHandler);
+        this.windowFocusHandler = null;
+      }
+      this.connectionAbortController = null;
     }
-    return principal;
   }
 
   async connect(): Promise<Wallet.Account> {
@@ -117,7 +152,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       this.setState(Adapter.Status.CONNECTED);
       return createAccountFromPrincipal(principal);
     } catch (error) {
-      this.logger.error(`[${this.adapter.walletName}] Connection error:`, error);
+      this.handleError('Connection error', error);
       await this.disconnect();
       throw error;
     }
@@ -126,7 +161,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   protected createActorInternal<T>(
     canisterId: string,
     idlFactory: any,
-    options?: { requiresSigning?: boolean }
+    _options?: { requiresSigning?: boolean }
   ): ActorSubclass<T> {
     if (!this.signerAgent) {
       throw new Error(`No signer agent available. Please connect first.`);
@@ -137,17 +172,27 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
         canisterId,
       });
     } catch (error) {
-      this.logger.error(`[${this.adapter.walletName}] Actor creation error:`, error);
+      this.handleError('Actor creation error', error);
       throw error;
     }
   }
 
   protected async disconnectInternal(): Promise<void> {
+    // Clean up any pending connection attempts
+    if (this.windowFocusHandler) {
+      window.removeEventListener('focus', this.windowFocusHandler);
+      this.windowFocusHandler = null;
+    }
+    if (this.connectionAbortController) {
+      this.connectionAbortController.abort();
+      this.connectionAbortController = null;
+    }
+    
     if (this.signer) {
       try {
         this.signer.closeChannel();
       } catch (error) {
-        this.logger.warn(`[${this.adapter.walletName}] Error closing signer channel:`, error);
+        this.handleError('Error closing signer channel', error);
       }
     }
     // Clear stored principal on disconnect
@@ -160,6 +205,45 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     this.signerAgent = null;
   }
 
-  // Abstract method for ensuring transport is initialized
+  /**
+   * Ensure the transport layer is initialized for the signer
+   * Subclasses must implement this to set up their specific transport mechanism
+   * @throws {Error} If transport initialization fails
+   */
   protected abstract ensureTransportInitialized(): Promise<void>;
+
+  /**
+   * Dispose of signer-specific resources
+   * Cleans up signer, agents, and stored principal
+   */
+  protected async onDispose(): Promise<void> {
+    // Clean up any pending connection attempts
+    if (this.windowFocusHandler) {
+      window.removeEventListener('focus', this.windowFocusHandler);
+      this.windowFocusHandler = null;
+    }
+    if (this.connectionAbortController) {
+      this.connectionAbortController.abort();
+      this.connectionAbortController = null;
+    }
+    
+    // Clean up signer
+    if (this.signer) {
+      try {
+        this.signer.closeChannel();
+      } catch (error) {
+        // Best effort - already disposing
+      }
+      this.signer = null;
+    }
+    
+    // Clean up agents
+    this.agent = null;
+    this.signerAgent = null;
+    
+    // Clear stored principal
+    if (this.principalStorageKey) {
+      localStorage.removeItem(this.principalStorageKey);
+    }
+  }
 } 

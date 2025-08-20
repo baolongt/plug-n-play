@@ -2,7 +2,7 @@ import { ActorSubclass } from '@dfinity/agent';
 import { Adapter, GlobalPnpConfig } from './types/index.d';
 import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
 import { WalletAccount } from './types/WalletTypes';
-import { createPNPConfig } from './config';
+import { createPNPConfig, CreatePnpArgs } from './config';
 import { PnpState, StateResponse, StateTransition } from './managers/StateManager';
 export { createPNPConfig, PnpState };
 export type { GlobalPnpConfig, StateResponse, StateTransition };
@@ -16,6 +16,10 @@ export interface PnpInterface {
     connect: (walletId?: string) => Promise<WalletAccount | null>;
     disconnect: () => Promise<void>;
     getActor: <T>(options: any) => ActorSubclass<T>;
+    getIcrcActor: <T>(canisterId: string, options?: {
+        anon?: boolean;
+        requiresSigning?: boolean;
+    }) => ActorSubclass<T>;
     isAuthenticated: () => boolean;
     getEnabledWallets: () => AdapterConfig[];
 }
@@ -51,7 +55,33 @@ export declare class PNP implements PnpInterface {
     connect(walletId?: string): Promise<WalletAccount>;
     disconnect(): Promise<void>;
     getActor<T>(options: GetActorOptions): ActorSubclass<T>;
+    getIcrcActor<T>(canisterId: string, options?: {
+        anon?: boolean;
+        requiresSigning?: boolean;
+    }): ActorSubclass<T>;
     isAuthenticated(): boolean;
     getEnabledWallets(): AdapterConfig[];
+    /**
+     * Get performance metrics and cache statistics
+     */
+    getPerformanceStats(): {
+        cache: {
+            size: number;
+            maxSize: number;
+            hitRate?: number;
+        };
+        performance: import('./utils/PerformanceMonitor').PerformanceMetrics;
+        timings: Record<string, {
+            count: number;
+            average: number;
+            p50: number;
+            p95: number;
+            p99: number;
+            successRate: number;
+        }>;
+    };
 }
-export declare const createPNP: (config?: GlobalPnpConfig) => PNP;
+export declare const createPNP: (config?: CreatePnpArgs) => PNP;
+export { ConfigBuilder } from './config';
+export type { CreatePnpArgs };
+export { createAdapterExtension, type AdapterExtension, type ExtractAdapterIds } from './types/AdapterExtensions';

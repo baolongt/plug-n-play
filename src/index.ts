@@ -1,13 +1,15 @@
 import { ActorSubclass } from "@dfinity/agent";
+import { ICRC2_IDL } from "./did/icrc2.idl.js";
 import { Adapter, GlobalPnpConfig } from "./types/index.d";
 import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
 import { WalletAccount } from './types/WalletTypes';
-import { createPNPConfig } from "./config";
+import { createPNPConfig, CreatePnpArgs } from "./config";
 import { ConnectionManager } from './managers/ConnectionManager';
 import { ActorManager } from './managers/ActorManager';
 import { ConfigManager } from './managers/ConfigManager';
 import { ErrorManager, LogLevel } from './managers/ErrorManager';
 import { StateManager, PnpState, StateResponse, StateTransition } from './managers/StateManager';
+import { globalPerformanceMonitor } from './utils/PerformanceMonitor';
 
 // Re-export config types and creation function for easier consumption
 export { createPNPConfig, PnpState };
@@ -24,6 +26,7 @@ export interface PnpInterface {
   connect: (walletId?: string) => Promise<WalletAccount | null>;
   disconnect: () => Promise<void>;
   getActor: <T>(options: any) => ActorSubclass<T>;
+  getIcrcActor: <T>(canisterId: string, options?: { anon?: boolean; requiresSigning?: boolean }) => ActorSubclass<T>;
   isAuthenticated: () => boolean;
   getEnabledWallets: () => AdapterConfig[];
 }
@@ -85,7 +88,21 @@ export class PNP implements PnpInterface {
     );
 
     this.configManager = new ConfigManager(mergedConfig);
-    const finalConfig = this.configManager.getConfig();
+    let finalConfig = this.configManager.getConfig();
+    
+    // Re-merge registered adapters after ConfigManager processing
+    // This ensures registered adapters aren't lost during config processing
+    finalConfig = {
+      ...finalConfig,
+      adapters: {
+        ...finalConfig.adapters,
+        ...PNP.adapterRegistry
+      }
+    };
+    
+    // Update the configManager with the final config including registered adapters
+    this.configManager.updateConfig(finalConfig);
+    
     this.connectionManager = new ConnectionManager(finalConfig, this.errorManager);
     this.actorManager = new ActorManager(finalConfig, null);
 
@@ -140,19 +157,23 @@ export class PNP implements PnpInterface {
   }
 
   async connect(walletId?: string) {
+    const timingKey = globalPerformanceMonitor.startTiming('connection', walletId);
     try {
       if (this.stateManager.getCurrentState() === PnpState.CONNECTED) {
         // Already connected, return current account or handle as appropriate
         this.errorManager.info("Already connected.");
+        globalPerformanceMonitor.endTiming(timingKey, true);
         return this.account;
       }
       await this.stateManager.transitionTo(PnpState.CONNECTING);
       const account = await this.connectionManager.connect(walletId);
       this.actorManager.setProvider(this.connectionManager.provider);
+      globalPerformanceMonitor.endTiming(timingKey, true);
       return account;
     } catch (error) {
       await this.stateManager.transitionTo(PnpState.ERROR, { error });
       this.errorManager.handleError(error as Error);
+      globalPerformanceMonitor.endTiming(timingKey, false, String(error));
       throw error;
     }
   }
@@ -174,6 +195,18 @@ export class PNP implements PnpInterface {
     return this.actorManager.getActor<T>(options);
   }
 
+  getIcrcActor<T>(canisterId: string, options?: { anon?: boolean; requiresSigning?: boolean }): ActorSubclass<T> {
+    const anon = options?.anon ?? false;
+    const requiresSigning = options?.requiresSigning ?? false;
+    if (anon) {
+      return this.actorManager.createAnonymousActor<T>(canisterId, ICRC2_IDL);
+    }
+    if (this.connectionManager.provider && (this.connectionManager.provider as any).icrcActor) {
+      return (this.connectionManager.provider as any).icrcActor({ canisterId, anon: false, requiresSigning }) as ActorSubclass<T>;
+    }
+    return this.actorManager.getActor<T>({ canisterId, idl: ICRC2_IDL, anon: false, requiresSigning });
+  }
+
   isAuthenticated(): boolean {
     return this.connectionManager.isAuthenticated();
   }
@@ -186,7 +219,32 @@ export class PNP implements PnpInterface {
         id: wallet.id || id // Ensure id is always present
       })) as AdapterConfig[];
   }
+
+  /**
+   * Get performance metrics and cache statistics
+   */
+  getPerformanceStats() {
+    return {
+      cache: this.actorManager.getCacheStats(),
+      performance: globalPerformanceMonitor.getMetrics(),
+      timings: globalPerformanceMonitor.getTimingReport(),
+    };
+  }
 }
 
 // Export the factory function and wallet list
-export const createPNP = (config: GlobalPnpConfig = {}) => new PNP(config);
+export const createPNP = (config: CreatePnpArgs = {}) => {
+  const globalConfig = createPNPConfig(config);
+  return new PNP(globalConfig);
+};
+
+// Export configuration types and builder
+export { ConfigBuilder } from "./config";
+export type { CreatePnpArgs };
+
+// Export adapter extension types
+export { 
+  createAdapterExtension,
+  type AdapterExtension,
+  type ExtractAdapterIds
+} from "./types/AdapterExtensions";

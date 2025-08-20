@@ -10,4 +10,16 @@ export declare class ActorManager {
     getActor<T>(options: GetActorOptions): ActorSubclass<T>;
     createAnonymousActor<T>(canisterId: string, idl: any): ActorSubclass<T>;
     clearCache(): void;
+    /**
+     * Get cache statistics for monitoring
+     */
+    getCacheStats(): {
+        size: number;
+        maxSize: number;
+        hitRate?: number;
+    };
+    /**
+     * Clean up expired cache entries
+     */
+    cleanupExpiredCache(): number;
 }

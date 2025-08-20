@@ -1,29 +1,13 @@
-// Adapters
-import { InternetIdentity } from "./src/adapters/InternetIdentity";
-import { PlugAdapter } from "./src/adapters/PlugAdapter";
-import { BitfinityAdapter } from "./src/adapters/BitfinityAdapter";
-import { BatchTransact } from "./src/utils/batchTransact";
 import { AnonymousIdentity, HttpAgent } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { ActorSubclass } from "@dfinity/agent";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import { IIAdapterConfig, SolanaAdapterConfig, OisyAdapterConfig, PlugAdapterConfig, NFIDAdapterConfig } from "./AdapterTypes";
+import { IIAdapterConfig, OisyAdapterConfig, PlugAdapterConfig, NFIDAdapterConfig, SiwsAdapterConfig } from "./AdapterConfigs";
 
 declare module "*.jpg";
 declare module "*.jpeg";
 declare module "*.svg";
 
-export interface PnpConfig {
-  delegationTargets: string[];
-  delegationTimeout: bigint;
-  derivationOrigin: string;
-  dfxNetwork: string;
-  fetchRootKey: boolean;
-  hostUrl: string;
-  localStorageKey: string;
-  siwsProviderCanisterId: string;
-  verifyQuerySignatures: boolean;
-}
 
 export namespace Wallet {
   export interface Account {
@@ -47,7 +31,8 @@ export interface GlobalPnpConfig {
   verifyQuerySignatures?: boolean;
   localStorageKey?: string;
   siwsProviderCanisterId?: string;
-  adapters?: Record<string, IIAdapterConfig | PlugAdapterConfig | NFIDAdapterConfig | OisyAdapterConfig | SiwsAdapterConfig>;
+  siweProviderCanisterId?: string;
+  adapters?: Record<string, any>; // Adapter configurations
   logLevel?: LogLevel;
   persistenceKey?: string;
   storage?: Storage;
@@ -76,7 +61,7 @@ export namespace Adapter {
     enabled?: boolean;
     logo?: string;
     walletName?: string;
-    chain?: 'ICP' | 'SOL';
+    chain?: 'ICP' | 'SOL' | 'ETH';
     website?: string;
     adapter?: AdapterConstructor;
     config?: {
@@ -124,6 +109,41 @@ export namespace Adapter {
       idl: any,
       options?: { requiresSigning?: boolean },
     ): ActorSubclass<T>;
+    icrcActor?<T = import("../did/icrc2.types").Icrc2Service>(params: { canisterId: string; anon?: boolean; requiresSigning?: boolean }): ActorSubclass<T>;
+    icrc1Transfer?(canisterId: string, args: import("../did/icrc2.types").IcrcTransferArg, options?: { requiresSigning?: boolean }): Promise<any>;
+    icrc2Approve?(canisterId: string, args: import("../did/icrc2.types").IcrcApproveArgs, options?: { requiresSigning?: boolean }): Promise<any>;
+    icrc2TransferFrom?(canisterId: string, args: import("../did/icrc2.types").IcrcTransferFromArgs, options?: { requiresSigning?: boolean }): Promise<any>;
+    icrc1Fee?(canisterId: string): Promise<bigint>;
+    getIcrc1Balance?(
+      canisterId: string,
+      account: import("../did/icrc2.types").IcrcAccount
+    ): Promise<bigint>;
+    getIcrc1Name?(canisterId: string): Promise<string>;
+    getIcrc1Symbol?(canisterId: string): Promise<string>;
+    getIcrc1Decimals?(canisterId: string): Promise<number>;
+    getIcrc1Metadata?(canisterId: string): Promise<Array<[string, any]>>;
+    getIcrc1TotalSupply?(canisterId: string): Promise<bigint>;
+    getIcrc1MintingAccount?(canisterId: string): Promise<[] | [import("../did/icrc2.types").IcrcAccount]>;
+    getIcrc1SupportedStandards?(canisterId: string): Promise<Array<{ name: string; url: string }>>;
+    getIcrc2Allowance?(
+      canisterId: string,
+      owner: import("../did/icrc2.types").IcrcAccount,
+      spender: import("../did/icrc2.types").IcrcAccount
+    ): Promise<{ allowance: bigint; expires_at: [] | [bigint] }>;
+    ensureIcrc2Allowance?(
+      canisterId: string,
+      params: {
+        spender: { owner: any; subaccount: any[] | [] } | string;
+        requiredAmount: bigint;
+        fromSubaccount?: Uint8Array | number[];
+        memo?: Uint8Array | number[];
+        createdAtTime?: bigint;
+        expiresAt?: bigint;
+        approveAmount?: bigint;
+        approveMultiplier?: bigint;
+        fee?: bigint;
+      }
+    ): Promise<{ ok: boolean; allowance: bigint; approved?: bigint; result?: any }>;
     undelegatedActor?<T>(
       canisterId: string,
       idlFactory: any,
@@ -145,6 +165,7 @@ export class PNP {
   disconnect(): Promise<void>;
   isAuthenticated(): boolean;
   getActor<T>(canisterId: string, idl: any, isAnon?: boolean): ActorSubclass<T>;
+  getIcrcActor<T>(canisterId: string, options?: { anon?: boolean; requiresSigning?: boolean }): ActorSubclass<T>;
   createAnonymousActor<T>(
     canisterId: string,
     idl: any,

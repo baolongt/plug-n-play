@@ -7,7 +7,7 @@ export interface AdapterConfig {
   enabled: boolean;
   logo: string;
   walletName: string;
-  chain: 'ICP' | 'SOL';
+  chain: 'ICP' | 'SOL' | 'ETH';
   website?: string;
   adapter: AdapterConstructor;
   config: {

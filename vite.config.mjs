@@ -7,35 +7,165 @@ import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfil
 import { NodeModulesPolyfillPlugin } from "@esbuild-plugins/node-modules-polyfill";
 import inject from "@rollup/plugin-inject";
 
-// Determine build environment
+// Determine build environment and package
 const isProd = process.env.NODE_ENV === "production";
+const buildPackage = process.env.BUILD_PACKAGE || "main"; // 'main', 'solana', 'metamask', 'rabby', or 'ethereum'
+
+// Package-specific configurations
+const packageConfigs = {
+  main: {
+    entry: resolve(__dirname, "src/index.ts"),
+    name: "PlugNPlay",
+    fileName: (format) => `plug-n-play.${format}.js`,
+    outDir: "dist",
+    external: [
+      "@dfinity/auth-client",
+      "@dfinity/principal",
+      "@dfinity/candid",
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/utils",
+      "@slide-computer/signer",
+      "@slide-computer/signer-agent",
+      "@slide-computer/signer-extension",
+      "@slide-computer/signer-storage",
+      "@slide-computer/signer-transport-stoic",
+      "@slide-computer/signer-web",
+      "@walletconnect/ethereum-provider",
+      "ethers",
+      "ic-siwe-js",
+      "viem",
+    ],
+    formats: ["es"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      compilerOptions: {
+        declaration: true,
+        skipLibCheck: true,
+      },
+      logDiagnostics: isProd,
+      skipDiagnostics: !isProd,
+    },
+    copyAssets: true,
+  },
+  solana: {
+    entry: resolve(__dirname, "packages/solana/src/index.ts"),
+    name: "PNPSolana",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/solana/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@windoge98/plug-n-play",
+      /^@windoge98\/plug-n-play/,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/solana/dist",
+      include: ["packages/solana/src/**/*", "packages/solana/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/solana/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline images for Solana package
+    // Enable code splitting for large dependencies
+    manualChunks: {
+      'solana-web3': ['@solana/web3.js'],
+      'solana-adapters': [
+        '@solana/wallet-adapter-base',
+        '@solana/wallet-adapter-phantom',
+        '@solana/wallet-adapter-solflare',
+      ],
+    },
+  },
+  ethereum: {
+    entry: resolve(__dirname, "packages/ethereum/src/index.ts"),
+    name: "PNPEthereum",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/ethereum/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@walletconnect/ethereum-provider",
+      "ethers",
+      "ic-siwe-js",
+      "viem",
+      "@windoge98/plug-n-play",
+      /^@windoge98\/plug-n-play/,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/ethereum/dist",
+      include: ["packages/ethereum/src/**/*", "packages/ethereum/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/ethereum/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline images for Ethereum package
+  },
+};
+
+const currentConfig = packageConfigs[buildPackage];
 
 export default defineConfig({
+  // Include assets for Solana and Ethereum packages
+  ...((buildPackage === 'solana' || buildPackage === 'ethereum') && {
+    assetsInclude: ['**/*.webp', '**/*.svg', '**/*.png', '**/*.jpg'],
+  }),
+  
   build: {
-    sourcemap: !isProd, // Generate sourcemaps only when not in production
-    minify: isProd ? 'terser' : false, // Minify only in production
+    sourcemap: !isProd,
+    minify: isProd ? 'terser' : false,
     lib: {
-      entry: resolve(__dirname, "src/index.ts"),
-      name: "PlugNPlay",
-      formats: ["es"],
-      fileName: (format) => `plug-n-play.${format}.js`,
+      entry: currentConfig.entry,
+      name: currentConfig.name,
+      formats: currentConfig.formats,
+      fileName: currentConfig.fileName,
     },
     rollupOptions: {
-      external: [
-        "@dfinity/auth-client",
-        "@dfinity/principal",
-        "@dfinity/candid",
-        "@dfinity/agent",
-        "@dfinity/identity",
-        "@dfinity/utils",
-      ],
+      external: currentConfig.external,
       output: {
-        format: "es",
+        format: currentConfig.formats[0],
         exports: "named",
+        globals: {
+          ...(buildPackage === 'solana' && {
+            '@dfinity/agent': 'DfinityAgent',
+            '@dfinity/identity': 'DfinityIdentity',
+            '@dfinity/principal': 'DfinityPrincipal',
+            '@solana/web3.js': 'SolanaWeb3',
+            '@windoge98/plug-n-play': 'PNP',
+            'bs58': 'bs58',
+          }),
+          ...(buildPackage === 'ethereum' && {
+            '@dfinity/agent': 'DfinityAgent',
+            '@dfinity/identity': 'DfinityIdentity',
+            '@dfinity/principal': 'DfinityPrincipal',
+            '@walletconnect/ethereum-provider': 'WalletConnectEthereumProvider',
+            'ethers': 'ethers',
+            'viem': 'viem',
+            '@windoge98/plug-n-play': 'PNP',
+          }),
+          // Always provide globals for polyfills
+          'buffer': 'buffer',
+          'process': 'process',
+        },
+        ...(currentConfig.manualChunks && {
+          manualChunks: currentConfig.manualChunks,
+        }),
       },
       plugins: [
         inject({
           Buffer: ["buffer", "Buffer"],
+          process: ["process", "process"],
+          ...(buildPackage === 'solana' && {
+            global: "globalThis",
+          }),
         }),
       ],
     },
@@ -44,26 +174,36 @@ export default defineConfig({
       transformMixedEsModules: true,
       esmExternals: true,
     },
-    outDir: "dist",
+    outDir: currentConfig.outDir,
     emptyOutDir: true,
-    // Speed up build by using more resources
     reportCompressedSize: isProd,
     chunkSizeWarningLimit: 1000,
     target: "es2020",
+    ...(currentConfig.assetsInlineLimit && {
+      assetsInlineLimit: currentConfig.assetsInlineLimit,
+    }),
   },
+  
   test: {
     globals: true,
     environment: "jsdom",
   },
+  
   define: {
     "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
     global: "globalThis",
+    ...(buildPackage === 'solana' && {
+      'global.Buffer': 'Buffer',
+      'globalThis.Buffer': 'Buffer',
+      'window.Buffer': 'Buffer',
+    }),
   },
+  
   resolve: {
     alias: {
-      "@": resolve(__dirname, "./src"),
-      "@types": resolve(__dirname, "src/types"),
-      "@src": resolve(__dirname, "src"),
+      "@": resolve(__dirname, buildPackage === 'main' ? "./src" : `./packages/${buildPackage}/src`),
+      "@types": resolve(__dirname, buildPackage === 'main' ? "src/types" : `packages/${buildPackage}/src/types`),
+      "@src": resolve(__dirname, buildPackage === 'main' ? "src" : `packages/${buildPackage}/src`),
       "iso-url": resolve(__dirname, "src/utils/url-node.ts"),
       buffer: "buffer/",
       process: "process/browser",
@@ -71,6 +211,7 @@ export default defineConfig({
       util: "util/",
     },
   },
+  
   optimizeDeps: {
     esbuildOptions: {
       target: "es2020",
@@ -91,54 +232,45 @@ export default defineConfig({
     include: [
       "buffer",
       "process/browser",
-      // Add Solana wallet adapter packages to optimizeDeps
-      "@solana/wallet-adapter-walletconnect",
-      "@solana/web3.js",
-      "@solana/spl-token",
     ],
   },
+  
   plugins: [
-    // TypeScript declarations plugin - optimized config
-    dts({
-      insertTypesEntry: true,
-      compilerOptions: {
-        declaration: true,
-        skipLibCheck: true, // Skip type checking of declaration files
-      },
-      logDiagnostics: isProd, // Only log diagnostics in production
-      // Skip type checking in development for faster builds
-      skipDiagnostics: !isProd,
-    }),
-    // Static asset copying
-    viteStaticCopy({
-      targets: [
-        {
-          src: "assets/*",
-          dest: "assets",
-        },
-      ],
-    }),
-    // Conditional compression plugins for production only
-    ...(isProd
-      ? [
-          viteCompression({
-            verbose: false, // Reduce logging
-            disable: false,
-            threshold: 5024 * 10, // Only compress files > 10KB
-            algorithm: "gzip",
-            ext: ".gz",
-          }),
-          viteCompression({
-            verbose: false, // Reduce logging
-            disable: false,
-            threshold: 5024 * 10, // Only compress files > 10KB
-            algorithm: "brotliCompress",
-            ext: ".br",
-          }),
-        ]
-      : []),
+    // TypeScript declarations plugin
+    dts(currentConfig.dtsOptions),
+    
+    // Static asset copying (only for main package)
+    ...(currentConfig.copyAssets ? [
+      viteStaticCopy({
+        targets: [
+          {
+            src: "assets/*",
+            dest: "assets",
+          },
+        ],
+      }),
+    ] : []),
+    
+    // Compression plugins for production
+    ...(isProd ? [
+      viteCompression({
+        verbose: false,
+        disable: false,
+        threshold: 5024 * 10,
+        algorithm: "gzip",
+        ext: ".gz",
+      }),
+      viteCompression({
+        verbose: false,
+        disable: false,
+        threshold: 5024 * 10,
+        algorithm: "brotliCompress",
+        ext: ".br",
+      }),
+    ] : []),
   ],
-  // Improve dev server performance
+  
+  // Dev server configuration
   server: {
     hmr: {
       overlay: true,

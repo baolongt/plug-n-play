@@ -70,10 +70,10 @@ export interface SiweAdapterConfig extends GlobalPnpConfig {
     derivationOrigin?: string;
 }
 export type AdapterSpecificConfig = IIAdapterConfig | PlugAdapterConfig | NFIDAdapterConfig | OisyAdapterConfig | SiwsAdapterConfig | SiweAdapterConfig | StoicAdapterConfig;
-export declare function isPlugAdapterConfig(config: GlobalPnpConfig): config is PlugAdapterConfig;
-export declare function isNFIDAdapterConfig(config: GlobalPnpConfig): config is NFIDAdapterConfig;
-export declare function isOisyAdapterConfig(config: GlobalPnpConfig): config is OisyAdapterConfig;
-export declare function isSiwsAdapterConfig(config: GlobalPnpConfig): config is SiwsAdapterConfig;
-export declare function isIIAdapterConfig(config: GlobalPnpConfig): config is IIAdapterConfig;
-export declare function isStoicAdapterConfig(config: GlobalPnpConfig): config is StoicAdapterConfig;
-export declare function isSiweAdapterConfig(config: GlobalPnpConfig): config is SiweAdapterConfig;
+export declare const isPlugAdapterConfig: (config: unknown) => config is PlugAdapterConfig;
+export declare const isNFIDAdapterConfig: (config: unknown) => config is NFIDAdapterConfig;
+export declare const isOisyAdapterConfig: (config: unknown) => config is OisyAdapterConfig;
+export declare const isSiwsAdapterConfig: (config: unknown) => config is SiwsAdapterConfig;
+export declare const isIIAdapterConfig: (config: unknown) => config is IIAdapterConfig;
+export declare const isSiweAdapterConfig: (config: unknown) => config is SiweAdapterConfig;
+export declare const isStoicAdapterConfig: (config: unknown) => config is StoicAdapterConfig;

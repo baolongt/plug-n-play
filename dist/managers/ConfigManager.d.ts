@@ -5,7 +5,7 @@ export interface ConfigValidationError {
 }
 export declare class ConfigManager {
     private config;
-    constructor(userConfig?: GlobalPnpConfig);
+    constructor(config: GlobalPnpConfig);
     getConfig(): GlobalPnpConfig;
     updateConfig(partialConfig: Partial<GlobalPnpConfig>): void;
     validateConfig(config: GlobalPnpConfig): {

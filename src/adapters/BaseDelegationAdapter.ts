@@ -1,6 +1,6 @@
 import { Ed25519KeyIdentity, DelegationIdentity, DelegationChain } from "@dfinity/identity";
 import { Principal } from "@dfinity/principal";
-import { BaseAdapter } from "./BaseAdapter";
+import { BaseAdapter, AdapterConstructorArgs } from "./BaseAdapter";
 import { AdapterSpecificConfig } from "../types/AdapterConfigs";
 import { 
   IdbStorage, 
@@ -21,7 +21,7 @@ export abstract class BaseDelegationAdapter<T extends AdapterSpecificConfig = Ad
   protected sessionKey: Ed25519KeyIdentity | null = null;
   protected identity: DelegationIdentity | null = null;
 
-  constructor(args: any) {
+  constructor(args: AdapterConstructorArgs<T>) {
     super(args);
     this.storage = new IdbStorage();
     this.initializeStorageRestore();
@@ -84,9 +84,44 @@ export abstract class BaseDelegationAdapter<T extends AdapterSpecificConfig = Ad
     await setDelegationChain(this.adapter.id, delegationChain, this.storage);
   }
 
-  // Abstract method for subclasses to implement additional restoration logic
+  /**
+   * Hook for subclasses to perform additional logic after restoring from storage
+   * @param sessionKey - The restored session key
+   * @param delegationChain - The restored delegation chain
+   */
   protected abstract onStorageRestored(sessionKey: Ed25519KeyIdentity, delegationChain: DelegationChain): Promise<void>;
   
-  // Abstract method for subclasses to implement additional cleanup logic
+  /**
+   * Hook for subclasses to perform additional cleanup when clearing stored session
+   * Called after the base storage cleanup is complete
+   */
   protected abstract onClearStoredSession(): Promise<void>;
+
+  // Ensure delegation sessions are cleared on disconnect unless a subclass overrides and skips super
+  protected async disconnectInternal(): Promise<void> {
+    await super.disconnectInternal();
+    await this.clearStoredSession();
+  }
+
+  /**
+   * Dispose of delegation-specific resources
+   * Cleans up storage and identity
+   */
+  protected async onDispose(): Promise<void> {
+    // Clear stored session data
+    await this.clearStoredSession();
+    
+    // Clean up identity
+    this.identity = null;
+    this.sessionKey = null;
+    
+    // Clean up storage if it has a cleanup method
+    if (this.storage && 'close' in this.storage && typeof this.storage.close === 'function') {
+      try {
+        await (this.storage as any).close();
+      } catch (error) {
+        // Best effort - already disposing
+      }
+    }
+  }
 } 

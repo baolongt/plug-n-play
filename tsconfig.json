@@ -9,7 +9,7 @@
     "outDir": "./dist",
     "strict": false,
     "esModuleInterop": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowJs": true,
     "baseUrl": ".",
     "paths": {

@@ -1,9 +1,9 @@
-import './lib/utils/polyfills'
 import './app.css'
 import App from './App.svelte'
 
-const app = new App({
-  target: document.getElementById('app')
-});
+// Polyfill
+if (typeof window !== 'undefined') window.global = window;
 
-export default app
+export default new App({
+  target: document.getElementById('app')
+})

@@ -1,44 +1,24 @@
-import { SendOptions } from '@solana/web3.js';
-import { SplTokenBalance } from '../managers/SplTokenManager';
+// Note: These types are moved to @windoge98/pnp-solana package
+export interface SendOptions {
+  skipPreflight?: boolean;
+  preflightCommitment?: string;
+  maxRetries?: number;
+  minContextSlot?: number;
+}
+
+// SPL token balance interface removed - functionality no longer supported
 
 /**
  * Interface for SIWS Adapter public methods
  */
 export interface ISiwsAdapter {
-  // Solana Balance Methods
-  getSolBalance(): Promise<{ amount: number; usdValue?: number }>;
-  getSplTokenBalances(): Promise<SplTokenBalance[]>;
+  // Balance methods removed - functionality no longer supported
   
   // Solana Transfer Methods
-  /**
-   * Send SOL to another address
-   * @param toAddress - Recipient's Solana address
-   * @param amountInSol - Amount of SOL to send
-   * @param options - Optional send options (e.g., skipPreflight)
-   * @returns Transaction signature
-   */
-  sendSol(
-    toAddress: string,
-    amountInSol: number,
-    options?: SendOptions
-  ): Promise<string>;
+  // Note: SOL transfer functionality has been removed.
+  // Use sendSplToken for SPL token transfers only.
   
-  /**
-   * Send SPL tokens to another address
-   * @param mintAddress - Token mint address
-   * @param toAddress - Recipient's Solana address
-   * @param amount - Amount of tokens to send (in human-readable format)
-   * @param decimals - Token decimals
-   * @param options - Optional send options
-   * @returns Transaction signature
-   */
-  sendSplToken(
-    mintAddress: string,
-    toAddress: string,
-    amount: number,
-    decimals: number,
-    options?: SendOptions
-  ): Promise<string>;
+  // SPL token transfer functionality has been removed.
   
   /**
    * Estimate transaction fee in SOL

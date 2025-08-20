@@ -1,82 +1,17 @@
 import { Adapter } from "../types";
-import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import { SiwsAdapter } from "./ic/SiwsAdapter";
-import { IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter, StoicAdapter, SiweAdapter } from "./ic";
-import { getDefaultTransportConfig } from "../utils/configUtils"; 
+import { IIAdapter } from "./ic";
+import { UnifiedSignerAdapter, SignerType } from "./ic/UnifiedSignerAdapter";
+import { getDefaultTransportConfig } from "../utils";
 
-// Import logos
-import phantomLogo from "../../assets/phantom.webp";
-import solflareLogo from "../../assets/solflare.svg";
-import backpackLogo from "../../assets/backpack.webp";
-import walletconnectLogo from "../../assets/walletconnect.webp";
+// Import logos for IC wallets only
 import oisyLogo from "../../assets/oisy_logo.webp";
 import nfidLogo from "../../assets/nfid.webp";
 import dfinityLogo from "../../assets/dfinity.webp";
 import plugLogo from "../../assets/plug.webp";
 import stoicLogo from "../../assets/stoic.jpg";
-import metamaskLogo from "../../assets/metamask.png";
 
-// Define the unified adapters map
+// Define IC-only adapters using unified signer adapter
 export const Adapters: Record<string, Adapter.Config> = {
-  // Solana Adapters
-  phantomSiws: {
-    id: 'phantomSiws',
-    enabled: false,
-    walletName: "Phantom",
-    logo: phantomLogo,
-    website: "https://phantom.app",
-    chain: 'SOL',
-    adapter: SiwsAdapter,
-    config: {
-      enabled: false,
-      solanaNetwork: WalletAdapterNetwork.Mainnet,
-    },
-  },
-  solflareSiws: {
-    id: 'solflareSiws',
-    enabled: false,
-    walletName: "Solflare",
-    logo: solflareLogo,
-    website: "https://solflare.com",
-    chain: 'SOL',
-    adapter: SiwsAdapter,
-    config: {
-      enabled: false,
-      solanaNetwork: WalletAdapterNetwork.Mainnet,
-    },
-  },
-  backpackSiws: {
-    id: 'backpackSiws',
-    enabled: false,
-    walletName: "Backpack",
-    logo: backpackLogo,
-    website: "https://backpack.app",
-    chain: 'SOL',
-    adapter: SiwsAdapter,
-    config: {
-      enabled: false,
-      solanaNetwork: WalletAdapterNetwork.Mainnet,
-    },
-  },
-  walletconnectSiws: {
-    id: 'walletconnectSiws',
-    enabled: false,
-    walletName: "WalletConnect",
-    logo: walletconnectLogo,
-    website: "https://walletconnect.com",
-    chain: 'SOL',
-    adapter: SiwsAdapter,
-    config: {
-      enabled: false,
-      solanaNetwork: WalletAdapterNetwork.Mainnet,
-      projectId: 'YOUR_PROJECT_ID',
-      appName: 'Windoge98',
-      appDescription: 'A dApp using WalletConnect for Solana',
-      appUrl: 'https://desktop.windoge98.com',
-      appIcons: ['https://desktop.windoge98.com/logo.png'],
-    },
-  },
-
   // Internet Computer Adapters
   oisy: {
     id: 'oisy',
@@ -85,10 +20,11 @@ export const Adapters: Record<string, Adapter.Config> = {
     logo: oisyLogo,
     website: "https://oisy.com",
     chain: 'ICP',
-    adapter: OisyAdapter,
+    adapter: UnifiedSignerAdapter,
     config: {
+      signerType: SignerType.OISY,
       signerUrl: "https://oisy.com/sign",
-      transport: getDefaultTransportConfig(),
+      ...getDefaultTransportConfig(),
     },
   },
   nfid: {
@@ -98,12 +34,27 @@ export const Adapters: Record<string, Adapter.Config> = {
     logo: nfidLogo,
     website: "https://nfid.one",
     chain: 'ICP',
-    adapter: NFIDAdapter,
+    adapter: UnifiedSignerAdapter,
     config: {
+      signerType: SignerType.NFID,
       signerUrl: "https://nfid.one/rpc",
       fetchRootKey: false,
       verifyQuerySignatures: true,
-      transport: getDefaultTransportConfig(),
+      ...getDefaultTransportConfig(),
+    },
+  },
+  stoic: {
+    id: 'stoic',
+    enabled: true,
+    walletName: "Stoic",
+    logo: stoicLogo,
+    website: "https://www.stoicwallet.com",
+    chain: 'ICP',
+    adapter: UnifiedSignerAdapter,
+    config: {
+      signerType: SignerType.STOIC,
+      maxTimeToLive: BigInt(8 * 60 * 60 * 1000 * 1000 * 1000), // 8 hours
+      keyType: 'ECDSA' as const,
     },
   },
   ii: {
@@ -128,40 +79,18 @@ export const Adapters: Record<string, Adapter.Config> = {
     logo: plugLogo,
     website: "https://plugwallet.ooo",
     chain: 'ICP',
-    adapter: PlugAdapter,
+    adapter: UnifiedSignerAdapter,
     config: {
-      delegationTargets: [],
-      delegationTimeout: BigInt(7 * 24 * 60 * 60 * 1000 * 1000 * 1000),
+      signerType: SignerType.PLUG,
+      ...getDefaultTransportConfig(),
     },
   },
-  stoic: {
-    id: 'stoic',
-    enabled: true,
-    walletName: "Stoic",
-    logo: stoicLogo,
-    website: "https://www.stoicwallet.com",
-    chain: 'ICP',
-    adapter: StoicAdapter,
-    config: {
-      maxTimeToLive: BigInt(8 * 60 * 60 * 1000 * 1000 * 1000), // 8 hours
-      keyType: 'ECDSA' as const,
-    },
-  },
-  metamaskSiwe: {
-    id: 'metamaskSiwe',
-    enabled: true,
-    walletName: "Metamask",
-    logo: metamaskLogo,
-    website: "https://metamask.io",
-    chain: 'ETH',
-    adapter: SiweAdapter,
-  }
 };
 
-// Export all adapters for direct use
-export { SiwsAdapter, IIAdapter, PlugAdapter, NFIDAdapter, OisyAdapter, StoicAdapter };
+// Export adapters for direct use
+export { IIAdapter, UnifiedSignerAdapter };
 
 // Export base classes for extensibility
 export { BaseAdapter } from "./BaseAdapter";
 export { BaseDelegationAdapter } from "./BaseDelegationAdapter";
-export { BaseSignerAdapter } from "./BaseSignerAdapter"; 
+export { BaseSignerAdapter } from "./BaseSignerAdapter";

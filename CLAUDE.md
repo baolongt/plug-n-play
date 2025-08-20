@@ -4,254 +4,293 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Plug N Play (PNP) is a wallet adapter library for the Internet Computer (IC) ecosystem. It provides a unified interface for connecting to various IC wallets and experimental support for Sign-In with Solana (SIWS).
+Plug N Play (PNP) is a unified wallet adapter library for Internet Computer dApps supporting IC, Solana (SIWS), and Ethereum (SIWE) wallets. The project has evolved into a modular architecture with separate packages for different blockchain ecosystems.
 
 ## Project Structure
 
 ```text
 w98-pnp/
-├── src/
-│   ├── index.ts              # Main entry point, PNP class
-│   ├── config.ts             # Configuration management
-│   ├── adapters/             # Wallet adapter implementations
-│   │   ├── BaseAdapter.ts    # Abstract base class for adapters
-│   │   ├── BaseDelegationAdapter.ts
-│   │   ├── BaseSignerAdapter.ts
-│   │   └── ic/               # IC-specific adapters
-│   │       ├── IIAdapter.ts  # Internet Identity
-│   │       ├── NFIDAdapter.ts
-│   │       ├── OisyAdapter.ts
-│   │       ├── PlugAdapter.ts
-│   │       └── SiwsAdapter.ts # Sign-In with Solana base
-│   ├── managers/             # Core functionality managers
-│   │   ├── ActorManager.ts   # IC actor creation/caching
-│   │   ├── ConfigManager.ts  # Configuration merging
-│   │   ├── ConnectionManager.ts # Wallet connections
-│   │   ├── ErrorManager.ts   # Error handling & logging
-│   │   ├── StateManager.ts   # State machine
-│   │   ├── StatePersistenceManager.ts # State persistence
-│   │   └── SplTokenManager.ts # SPL token operations
-│   ├── types/                # TypeScript definitions
-│   │   ├── index.d.ts        # Main type definitions
-│   │   ├── AdapterTypes.ts   # Adapter interfaces
-│   │   ├── AdapterConfigs.ts # Adapter configurations
-│   │   └── WalletTypes.ts    # Wallet-related types
-│   ├── utils/                # Utility functions
-│   └── did/                  # Interface definitions
-├── tests/                    # Test files
-├── dist/                     # Build output
-├── demo/                     # Demo applications
-└── docs/                     # Documentation
-
+   src/                      # Core IC wallet functionality
+      index.ts              # Main entry point, PNP class
+      config.ts             # Configuration management  
+      adapters/             # IC wallet adapter implementations
+         BaseAdapter.ts     # Abstract base classes
+         BaseDelegationAdapter.ts
+         BaseSignerAdapter.ts
+         ic/                # IC-specific adapters
+            IIAdapter.ts    # Internet Identity
+            PlugAdapter.ts  # Plug wallet
+            UnifiedSignerAdapter.ts # Signer-based wallets
+      managers/             # Core functionality managers
+         ActorManager.ts    # IC actor creation/caching
+         ConfigManager.ts   # Configuration merging
+         ConnectionManager.ts # Wallet connections
+         StateManager.ts    # State machine
+         ErrorManager.ts    # Error handling & logging
+         StatePersistenceManager.ts # State persistence
+      types/                # TypeScript definitions
+         AdapterTypes.ts    # Adapter interfaces
+         AdapterConfigs.ts  # Adapter configurations
+         AdapterExtensions.ts # Extension system types
+         SiwsAdapterInterface.ts # SIWS interface
+         WalletTypes.ts     # Wallet-related types
+      utils.ts              # Utility functions
+      did/                  # Interface definitions
+   packages/                # Modular blockchain-specific packages
+      solana/              # Solana wallet adapters (SIWS)
+         src/
+            index.ts        # Solana extension & adapters
+            SiwsAdapter.ts  # Base SIWS adapter
+            SimpleSiwsAdapter.ts # Simplified implementation
+            SplTokenManager.ts # SPL token operations
+            extensions.ts   # Solana extension definition
+      ethereum/            # Ethereum wallet adapters (SIWE) 
+         src/
+            index.ts        # Ethereum extension & adapters
+            SiweAdapter.ts  # SIWE adapter implementation
+            extensions.ts   # Ethereum extension definition
+   demo/                    # Demo applications
+   tests/                   # Test files
+   dist/                    # Build output for main package
 ```
 
 ## Key Commands
 
-### Build
+### Build Commands
 
 ```bash
-npm run build       # Production build with minification
-# or
-pnpm build         # If using pnpm
+# Core package (IC wallets)
+npm run build              # Production build with minification
+
+# Modular packages 
+npm run build:solana       # Build Solana package only
+npm run build:ethereum     # Build Ethereum package only
+npm run build:all          # Build all packages (main + solana + ethereum)
+
+# Individual package builds (from package directories)
+cd packages/solana && npm run build
+cd packages/ethereum && npm run build
 ```
 
-- Builds the library using Vite
-- Outputs ES module format to `dist/plug-n-play.es.js`
-- Generates TypeScript declarations in `dist/`
-- Applies gzip and brotli compression in production
+- Uses Vite with dynamic package selection via `BUILD_PACKAGE` environment variable
+- Outputs ES module and CommonJS formats for packages
+- Main package: `dist/plug-n-play.es.js` (ES module only)
+- Package outputs: `packages/{solana,ethereum}/dist/`
+- TypeScript declarations generated for all packages
+- Assets inlined for package bundles
 
-### Test
+### Testing
 
 ```bash
-npm test          # Run tests in watch mode
-npm run test:ui   # Run tests with Vitest UI
-npm run coverage  # Generate test coverage report
+npm test                   # Run tests in watch mode
+npm run test:ui            # Run tests with Vitest UI
+npm run coverage           # Generate test coverage report
+
+# Package-specific testing
+cd packages/solana && npm run typecheck
 ```
 
-- Tests use Vitest with jsdom environment
+- Uses Vitest with jsdom environment
 - Test files: `tests/*.test.ts`
 - Coverage reports in `coverage/`
+- TypeScript checking available per package
 
 ### Development
 
 ```bash
-npm run dev       # Start Vite dev server
-npm run preview   # Preview production build
+npm run dev                # Start Vite dev server (main package)
+npm run preview            # Preview production build
+
+# Package development
+cd packages/solana && npm run dev
+
+# Workspace linking for local development
+npm run link:all           # Link all packages for local development  
+npm run unlink:all         # Unlink packages
 ```
 
 ## Architecture Overview
 
+### Modular Package System
+
+The project uses a **monorepo with workspace packages** approach:
+
+1. **Main Package** (`@windoge98/plug-n-play`)
+   - Core IC wallet functionality (Internet Identity, Plug, NFID)
+   - Base adapter classes and manager pattern
+   - Configuration system with extension support
+
+2. **Solana Package** (`@windoge98/pnp-solana`) 
+   - Solana wallet adapters via Sign-In with Solana (SIWS)
+   - Phantom, Solflare, WalletConnect support
+   - SPL token operations and Buffer polyfills
+
+3. **Ethereum Package** (`@windoge98/pnp-ethereum`)
+   - Ethereum wallet adapters via Sign-In with Ethereum (SIWE)
+   - MetaMask, WalletConnect support
+   - ethers.js and viem integration
+
+### Extension System
+
+**Declarative Adapter Registration**: Packages export extensions that register adapters automatically.
+
+```typescript
+// Instead of manual loops
+import { SolanaExtension } from '@windoge98/pnp-solana';
+
+const pnp = createPNP({
+  extensions: [SolanaExtension],  // Auto-registers Solana adapters
+  adapters: {
+    phantomSiws: { enabled: true }
+  }
+});
+```
+
 ### Core Components
 
 1. **PNP Class** (`src/index.ts`)
-   - Main entry point and public API
-   - Orchestrates all managers
-   - Static adapter registry for custom adapters
+   - Main entry point with `createPNP()` factory
+   - Extension system for modular wallet support
    - Methods: `connect()`, `disconnect()`, `getActor()`, `isAuthenticated()`
 
 2. **Managers** (`src/managers/`)
-   - **ConnectionManager**: Handles adapter lifecycle, wallet connections/disconnections
-   - **ActorManager**: Creates and caches IC actors with optimized cache keys
-   - **ConfigManager**: Merges global config with adapter-specific settings
-   - **StateManager**: Enforces valid state transitions (INITIALIZED → CONNECTING → CONNECTED)
-   - **ErrorManager**: Centralized error handling with log levels (DEBUG, INFO, WARN, ERROR)
-   - **SplTokenManager**: SPL token operations for SIWS (Solana) adapters
-   - **StatePersistenceManager**: Persists/recovers state across page reloads
+   - **ConnectionManager**: Adapter lifecycle and wallet connections
+   - **ActorManager**: IC actor creation with optimized caching
+   - **ConfigManager**: Configuration merging with extension support
+   - **StateManager**: State transitions (INITIALIZED → CONNECTING → CONNECTED)
+   - **ErrorManager**: Centralized logging with configurable levels
 
-3. **Adapters** (`src/adapters/`)
-   - **Base Classes**:
-     - `BaseAdapter`: Common functionality for all adapters
-     - `BaseDelegationAdapter`: For IC delegation-based wallets
-     - `BaseSignerAdapter`: For IC signer-based wallets
-   - **IC Adapters**: Internet Identity, NFID, Plug, Oisy
-   - **SIWS Adapters**: Experimental Solana wallet support (Phantom, Solflare, WalletConnect)
+3. **Configuration System** (`src/config.ts`)
+   - `createPNPConfig()`: Factory with environment detection
+   - ConfigBuilder pattern for fluent API
+   - Extension registration and adapter configuration
 
-4. **Configuration** (`src/config.ts`)
-   - `createPNPConfig()`: Factory function for configuration
-   - Environment detection (local vs IC mainnet)
-   - Default values and adapter-specific overrides
+4. **Adapter Base Classes** (`src/adapters/`)
+   - **BaseAdapter**: Common functionality
+   - **BaseDelegationAdapter**: IC delegation-based wallets
+   - **BaseSignerAdapter**: IC signer-based wallets (Slide Computer)
 
-### Key Design Patterns
+### Build System Architecture
 
-- **Manager Pattern**: Separation of concerns with dedicated managers
-- **Adapter Pattern**: Uniform interface for different wallet implementations
-- **State Machine**: Valid state transitions with error handling
-- **Factory Pattern**: Configuration and instantiation helpers
-- **Caching Strategy**: Actor caching by wallet+canister+signing requirement
+**Multi-Package Vite Configuration**:
+- Dynamic entry points based on `BUILD_PACKAGE` environment variable
+- Package-specific externals and polyfills
+- Buffer/process polyfills for Solana package (browser compatibility)
+- Asset inlining for wallet logos in packages
 
-## Type System
+## Type System & Configuration
 
-### Core Types
+### Modern Configuration API
 
 ```typescript
-// Main configuration
+// Object-based configuration with extensions
+const pnp = createPNP({
+  network: 'ic',                    // 'local' | 'ic'
+  extensions: [SolanaExtension],    // Modular wallet support
+  providers: {
+    siws: 'SIWS_CANISTER_ID',      // Solana integration
+    siwe: 'SIWE_CANISTER_ID'       // Ethereum integration
+  },
+  adapters: {
+    ii: { enabled: true },
+    phantomSiws: { enabled: true }
+  }
+});
+
+// Builder pattern alternative
+const pnp2 = createPNP(
+  ConfigBuilder.create()
+    .withEnvironment('local')
+    .withExtensions(SolanaExtension)
+    .withAdapter('ii', { enabled: true })
+    .build()
+);
+```
+
+### Key Types
+
+```typescript
+// Extension system
+AdapterExtension {
+  [adapterId: string]: AdapterRegistration;
+}
+
+// Configuration with extensions
 GlobalPnpConfig {
-  dfxNetwork?: string;
-  hostUrl?: string;
-  delegationTargets?: string[];
+  network?: 'local' | 'ic';
+  extensions?: AdapterExtension[];
+  providers?: { siws?: string; siwe?: string; };
   adapters?: Record<string, AdapterConfig>;
-  logLevel?: LogLevel;
-  // ... more options
 }
 
-// Adapter interface
-Adapter.Interface {
-  connect(): Promise<Wallet.Account>;
-  disconnect(): Promise<void>;
-  createActor<T>(): ActorSubclass<T>;
-  getPrincipal(): Promise<string>;
-  // ... more methods
-}
-
-// State management
+// State management  
 PnpState: INITIALIZED | CONNECTING | CONNECTED | DISCONNECTING | DISCONNECTED | ERROR
 ```
 
-## Development Best Practices
+## Development Guidelines
 
-### Code Conventions
+### Modular Development
 
-- TypeScript with strict mode disabled (see tsconfig.json)
-- ES2020 target with ESNext modules
-- Use absolute imports from `src/`
-- Prefer async/await over promises
+- **Core**: Focus on IC wallets and base functionality
+- **Packages**: Blockchain-specific implementations with minimal core dependencies
+- **Extensions**: Use extension system for clean adapter registration
+- **Testing**: Test packages independently with their specific dependencies
 
-### Testing Guidelines
+### Build Process
 
-- Test files in `tests/` directory
-- Mock external dependencies (AuthClient, etc.)
-- Test state transitions and error cases
-- Aim for >80% coverage on critical paths
+- **Development**: Use `npm run dev` for hot reloading
+- **Production**: Always run `npm run build:all` to ensure all packages work
+- **Linking**: Use workspace scripts for local package development
+- **CI/CD**: Build system supports separate package deployments
 
-### Error Handling
+### Error Handling & Debugging
 
-- Use ErrorManager for consistent logging
-- Throw meaningful errors with context
-- Handle async errors with try/catch
-- State transitions to ERROR state on failures
-
-### Performance Considerations
-
-- Actor caching to reduce canister calls
-- Lazy initialization of adapters
-- Efficient state persistence
-- Bundle size optimization with tree-shaking
-
-## Common Tasks
-
-### Adding a New Adapter
-
-1. Create adapter class extending appropriate base class
-2. Implement required abstract methods
-3. Add to `src/adapters/index.ts` exports
-4. Update type definitions if needed
-5. Add tests for the new adapter
-
-### Modifying State Management
-
-1. Update `PnpState` enum if adding states
-2. Ensure valid transitions in `StateManager`
-3. Update persistence logic if needed
-4. Test state recovery scenarios
-
-### Debugging Tips
-
+- Use ErrorManager for consistent logging across packages
 - Enable DEBUG log level for verbose output
-- Check browser console for error details
-- Use `getState()` to inspect current state
-- Verify adapter configuration matches wallet
+- Check browser console for wallet-specific errors
+- State inspection via `pnp.getState()` for debugging flows
 
-## Safari Popup Blocking Fix
+## Package Development
 
-Safari blocks popups that aren't opened as a direct result of user interaction. To ensure Internet Identity works properly in Safari:
+### Adding Solana Wallets
+
+1. Extend existing SIWS adapters in `packages/solana/src/`
+2. Register in `SolanaExtension` definition
+3. Add wallet-specific configuration options
+4. Test with SIWS provider canister
+
+### Adding Ethereum Wallets  
+
+1. Implement SIWE adapter in `packages/ethereum/src/`
+2. Register in `EthereumExtension` definition
+3. Handle ethers.js/viem integration patterns
+4. Test with SIWE provider canister
+
+### Cross-Package Dependencies
+
+- Packages depend on main package for base classes
+- Avoid circular dependencies between packages
+- Use peer dependencies for shared IC packages
+- Bundle blockchain-specific dependencies in packages
+
+## Performance Considerations
+
+- **Lazy Loading**: Packages only loaded when extensions are used
+- **Tree Shaking**: ES modules with proper sideEffects configuration
+- **Actor Caching**: Optimized cache keys by wallet+canister+options
+- **Bundle Optimization**: Separate packages prevent monolithic bundles
+- **Polyfill Strategy**: Selective polyfills per package (Buffer for Solana only)
+
+## Safari Compatibility
+
+Safari requires special handling for popup-based wallets:
 
 ```javascript
-// Correct usage - call openChannel() first
+// Correct: Prepare adapter before user action completes
 button.onclick = async () => {
-  await pnp.openChannel(); // Prepares the adapter
-  await pnp.connect('ii'); // Opens popup without blocking
-};
-
-// Wrong usage - Safari may block the popup
-button.onclick = async () => {
-  await pnp.connect('ii'); // Async delay may cause blocking
+  await pnp.openChannel(); // Initialize AuthClient early
+  await pnp.connect('ii'); // Popup opens without blocking
 };
 ```
 
-The `openChannel()` method initializes the AuthClient early, minimizing async operations before the popup opens.
-
-## Build Configuration
-
-### Vite Configuration (`vite.config.mjs`)
-
-- Library mode with ES module output
-- Polyfills for Node.js built-ins (Buffer, process)
-- External dependencies to reduce bundle size
-- Compression plugins for production builds
-- TypeScript declarations via `vite-plugin-dts`
-
-### TypeScript Configuration
-
-- Target: ES2020
-- Module: ESNext
-- Paths configured for clean imports
-- Declaration files generated in dist/
-
-## Solana Integration (SIWS)
-
-The library includes experimental support for Solana wallets through Sign-In with Solana (SIWS):
-
-1. Requires deployed IC SIWS Provider canister
-2. Set `siwsProviderCanisterId` in config
-3. Supports Phantom, Solflare, WalletConnect adapters
-4. Uses `@solana/wallet-adapter-*` packages
-5. SPL token operations via SplTokenManager
-
-## Environment Variables
-
-While the library doesn't directly use environment variables, it detects the environment through configuration:
-
-- `dfxNetwork`: "local" or "ic" (mainnet)
-- `fetchRootKey`: true for local development
-- `verifyQuerySignatures`: false for local development
-- `hostUrl`: Automatically set based on dfxNetwork
+The `openChannel()` method minimizes async operations before popup creation, preventing Safari's popup blocker.

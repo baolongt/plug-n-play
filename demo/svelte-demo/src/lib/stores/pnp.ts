@@ -1,140 +1,97 @@
 import { writable, derived, get } from 'svelte/store';
-import { createPNP, type PNP, type ActorSubclass } from '../../../../../src'; // Only import what's exported
+// Import from source for development
+import { PNP, ConfigBuilder } from '../../../../../src';
+// Import actual extensions from packages
+import { SolanaExtension } from '../../../../../packages/solana/src/extensions';
+import { EthereumExtension } from '../../../../../packages/ethereum/src/extensions';
 
-// Create stores
-export const selectedWalletId = writable<string | null>(null);
-export const pnpInstance = writable<PNP | null>(null); // Store the actual PNP instance
+// Stores
+export const pnpInstance = writable<PNP | null>(null);
 export const isConnected = writable(false);
-export const principalId = writable<string | null>(null); // Store Principal object
-export const accountId = writable<string | null>(null); // Store Account ID string
-
-// Derived store for available wallets from the initialized instance
-export const availableWallets = derived(pnpInstance, ($pnp) => {
-    return $pnp ? $pnp.getEnabledWallets() : [];
-});
+export const principalId = writable<string | null>(null);
+export const lastEvent = writable<any>(null);
+export const connectingWalletId = writable<string | null>(null);
+export const error = writable<string | null>(null);
+export const availableWallets = derived(pnpInstance, $p => $p?.getEnabledWallets() || []);
 
 // Initialize PNP
-export const initializePNP = () => {
-    // Comprehensive configuration example
-    const pnp = createPNP({
-        // Network configuration
-        dfxNetwork: 'ic', // 'ic' for mainnet, 'local' for local development
-        hostUrl: 'https://icp0.io', // Mainnet endpoint
-        
-        // Security settings
-        fetchRootKey: false, // Set to true only for local development
-        verifyQuerySignatures: true,
-        
-        // Delegation settings
-        delegationTimeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000), // 24 hours in nanoseconds
-        delegationTargets: [], // Add canister IDs that need delegation
-        derivationOrigin: typeof window !== 'undefined' ? window.location.origin : '',
-        
-        // Storage settings
-        localStorageKey: 'pnpConnectedWallet',
-        
-        // SIWS (Sign In With Service) settings
-        siwsProviderCanisterId: undefined, // Add your SIWS provider canister ID if using SIWS
-        
-        // Adapter configurations
-        adapters: {
-            // Plug wallet adapter
-            plug: {
+const initPNP = () => {
+    const pnp = new PNP(
+        ConfigBuilder.create()
+            .withEnvironment('ic')
+            .withDelegation({
+                timeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000),
+                targets: []
+            })
+            .withProviders({
+                siws: 'guktk-fqaaa-aaaao-a4goa-cai',
+                siwe: 'r4zqx-aiaaa-aaaar-qbuia-cai',
+            })
+            .withExtensions(SolanaExtension, EthereumExtension)
+            .withIcAdapters()
+            // Solana wallets
+            .withAdapter('phantomSiws', { enabled: true })
+            .withAdapter('solflareSiws', { enabled: true })
+            .withAdapter('walletconnectSiws', {
                 enabled: true,
-                config: {
-                    whitelist: [], // Add canister IDs that need to be whitelisted
-                    host: 'https://icp0.io',
-                    // Add any Plug-specific config here
-                }
-            },
-            // Internet Identity adapter
-            ii: {
-                enabled: true,
-                config: {
-                    identityProvider: 'https://identity.ic0.app',
-                    // Add any II-specific config here
-                }
-            }
-        }
-    });
+                projectId: 'YOUR_PROJECT_ID',
+                appName: 'PNP Demo',
+                appDescription: 'Demo using WalletConnect SIWS',
+                appUrl: 'https://example.com',
+                appIcons: ['https://example.com/icon.png']
+            })
+            // Ethereum wallets
+            .withAdapter('metamaskSiwe', { enabled: true })
+            .build()
+    );
 
-    // Set the actual instance
     pnpInstance.set(pnp);
-
-    // Check for existing connection on init
-    const storedWalletId = localStorage.getItem(pnp.config.localStorageKey || '');
-    if (storedWalletId && !get(isConnected)) {
-        pnp.connect().then(async account => {
-            if (account && pnp.provider) {
-                selectedWalletId.set(storedWalletId);
+    
+    // Auto-reconnect IC wallets (not Solana/Ethereum wallets)
+    const stored = localStorage.getItem('pnpConnectedWallet');
+    if (stored && !stored.includes('Siws') && !stored.includes('Siwe')) {
+        pnp.connect(stored).then(account => {
+            if (account) {
                 isConnected.set(true);
                 principalId.set(account.owner);
-                try {
-                    const accId = await pnp.provider.getAccountId();
-                    accountId.set(accId);
-                } catch (accIdError) {
-                    console.error("Failed to get accountId after reconnect:", accIdError);
-                    accountId.set(null);
-                }
+                lastEvent.set({ type: 'reconnected', walletId: stored });
             }
-        }).catch(err => {
-            console.warn("Failed to auto-reconnect:", err);
-            localStorage.removeItem(pnp.config.localStorageKey || '');
-            selectedWalletId.set(null);
-            isConnected.set(false);
-            principalId.set(null);
-            accountId.set(null);
-        });
+        }).catch(() => localStorage.removeItem('pnpConnectedWallet'));
     }
-
     return pnp;
+};
+
+// Helper to reset state
+const resetState = () => {
+    isConnected.set(false);
+    principalId.set(null);
+    connectingWalletId.set(null);
 };
 
 // Connect wallet
 export const connectWallet = async (walletId: string) => {
     const pnp = get(pnpInstance);
-    if (!pnp) {
-        throw new Error('PNP not initialized');
-    }
-
-    // Reset state before attempting connection
-    selectedWalletId.set(null);
-    isConnected.set(false);
-    principalId.set(null);
-    accountId.set(null);
+    if (!pnp) throw new Error('PNP not initialized');
+    
+    resetState();
+    connectingWalletId.set(walletId);
+    lastEvent.set({ type: 'statusChange', status: 'CONNECTING', walletId });
 
     try {
         const account = await pnp.connect(walletId);
-        if (!account || !pnp.provider) { // Check for provider too
-            throw new Error("Connection failed, was cancelled, or provider is missing.");
-        }
-        selectedWalletId.set(walletId);
+        if (!account) throw new Error("Connection cancelled");
+        
         isConnected.set(true);
         principalId.set(account.owner);
+        connectingWalletId.set(null);
+        lastEvent.set({ type: 'connected', walletId, principal: account.owner });
+        localStorage.setItem('pnpConnectedWallet', walletId);
         
-        // Fetch account ID after successful connection
-        try {
-            const accId = await pnp.provider.getAccountId();
-            accountId.set(accId);
-        } catch (accIdError) {
-             console.error("Failed to get accountId after connect:", accIdError);
-             accountId.set(null); // Set accountId to null if fetch fails
-             // Decide if this error should disconnect the user or just log
-             // For now, we stay connected but without accountId
-        }
-
         return account;
-    } catch (error) {
-        console.error('Failed to connect wallet:', error);
-        // Ensure state is reset on any connection error
-        selectedWalletId.set(null);
-        isConnected.set(false);
-        principalId.set(null);
-        accountId.set(null);
-        if (pnp.provider) {
-           try { await pnp.disconnect(); } catch (_) {} // Attempt cleanup
-        }
-        throw error;
+    } catch (err) {
+        resetState();
+        lastEvent.set({ type: 'error', message: err.message });
+        throw err;
     }
 };
 
@@ -145,20 +102,14 @@ export const disconnectWallet = async () => {
 
     try {
         await pnp.disconnect();
-        selectedWalletId.set(null);
-        isConnected.set(false);
-        principalId.set(null);
-        accountId.set(null);
-    } catch (error) {
-        console.error('Failed to disconnect wallet:', error);
-        // Optionally reset state even on disconnect error
-        selectedWalletId.set(null);
-        isConnected.set(false);
-        principalId.set(null);
-        accountId.set(null);
-        throw error;
+        resetState();
+        localStorage.removeItem('pnpConnectedWallet');
+        lastEvent.set({ type: 'disconnected' });
+    } catch (err) {
+        resetState();
+        throw err;
     }
 };
 
-// Initialize PNP on load
-initializePNP();
+// Initialize on load
+initPNP();
