@@ -9,6 +9,7 @@ import { BaseSignerAdapter } from "../BaseSignerAdapter";
 import { AdapterConstructorArgs } from "../BaseAdapter";
 import { Adapter, Wallet } from "../../types/index.d";
 import { createAccountFromPrincipal } from "../../utils";
+import { storage } from "../../utils/browser";
 
 export enum SignerType {
   OISY = "oisy",
@@ -202,6 +203,6 @@ export class UnifiedSignerAdapter extends BaseSignerAdapter<UnifiedSignerConfig>
     this.signerAgent = null;
     
     // Clear stored principal
-    localStorage.removeItem(this.principalStorageKey);
+    storage.removeItem(this.principalStorageKey);
   }
 }

@@ -7,6 +7,7 @@ import { AdapterSpecificConfig } from "../types/AdapterConfigs";
 import { Adapter, Wallet } from "../types/index.d";
 import { createAccountFromPrincipal } from "../utils";
 import { withTimeout, DEFAULT_TIMEOUTS } from "../utils/timeout";
+import { storage, windowEvents } from "../utils/browser";
 
 /**
  * Base class for adapters that use the Signer/SignerAgent pattern
@@ -54,7 +55,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   }
 
   protected async connectWithStoredPrincipal(): Promise<Principal | null> {
-    const storedPrincipal = localStorage.getItem(this.principalStorageKey);
+    const storedPrincipal = storage.getItem(this.principalStorageKey);
     
     if (storedPrincipal && storedPrincipal !== "null") {
       try {
@@ -64,7 +65,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
         }
         return principal;
       } catch (e) {
-        localStorage.removeItem(this.principalStorageKey);
+        storage.removeItem(this.principalStorageKey);
         // Fall through to normal connection flow
         return null;
       }
@@ -80,11 +81,11 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     const focusPromise = new Promise<never>((_, reject) => {
       this.windowFocusHandler = () => {
         // Remove listener immediately to prevent multiple triggers
-        window.removeEventListener('focus', this.windowFocusHandler!);
+        windowEvents.removeEventListener('focus', this.windowFocusHandler!);
         this.windowFocusHandler = null;
         reject(new Error('Connection cancelled - popup window was closed'));
       };
-      window.addEventListener('focus', this.windowFocusHandler);
+      windowEvents.addEventListener('focus', this.windowFocusHandler);
     });
     
     try {
@@ -104,7 +105,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       }
 
       const principal = accounts[0].owner;
-      localStorage.setItem(this.principalStorageKey, principal.toText());
+      storage.setItem(this.principalStorageKey, principal.toText());
       if (this.signerAgent) {
         this.signerAgent.replaceAccount(principal);
       }
@@ -112,7 +113,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     } finally {
       // Clean up the focus listener if it's still attached
       if (this.windowFocusHandler) {
-        window.removeEventListener('focus', this.windowFocusHandler);
+        windowEvents.removeEventListener('focus', this.windowFocusHandler);
         this.windowFocusHandler = null;
       }
       this.connectionAbortController = null;
@@ -180,7 +181,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   protected async disconnectInternal(): Promise<void> {
     // Clean up any pending connection attempts
     if (this.windowFocusHandler) {
-      window.removeEventListener('focus', this.windowFocusHandler);
+      windowEvents.removeEventListener('focus', this.windowFocusHandler);
       this.windowFocusHandler = null;
     }
     if (this.connectionAbortController) {
@@ -196,7 +197,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       }
     }
     // Clear stored principal on disconnect
-    localStorage.removeItem(this.principalStorageKey);
+    storage.removeItem(this.principalStorageKey);
   }
 
   protected cleanupInternal(): void {
@@ -219,7 +220,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   protected async onDispose(): Promise<void> {
     // Clean up any pending connection attempts
     if (this.windowFocusHandler) {
-      window.removeEventListener('focus', this.windowFocusHandler);
+      windowEvents.removeEventListener('focus', this.windowFocusHandler);
       this.windowFocusHandler = null;
     }
     if (this.connectionAbortController) {
@@ -243,7 +244,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     
     // Clear stored principal
     if (this.principalStorageKey) {
-      localStorage.removeItem(this.principalStorageKey);
+      storage.removeItem(this.principalStorageKey);
     }
   }
 } 

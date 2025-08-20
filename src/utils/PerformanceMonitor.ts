@@ -3,6 +3,8 @@
  * Tracks key metrics and provides insights for optimization
  */
 
+import { isBrowser } from './browser';
+
 export interface PerformanceMetrics {
   connectionTime?: number;
   actorCreationTime?: number;
@@ -237,7 +239,7 @@ export const globalPerformanceMonitor: PerformanceMonitor = new Proxy({} as Perf
   get(target, prop, receiver) {
     if (!_globalPerformanceMonitor) {
       _globalPerformanceMonitor = new PerformanceMonitor(
-        typeof window !== 'undefined' && window.location?.hostname === 'localhost'
+        isBrowser && window.location?.hostname === 'localhost'
       );
     }
     return Reflect.get(_globalPerformanceMonitor, prop, _globalPerformanceMonitor);

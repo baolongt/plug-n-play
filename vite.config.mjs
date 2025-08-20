@@ -20,22 +20,13 @@ const packageConfigs = {
     fileName: (format) => `plug-n-play.${format}.js`,
     outDir: "dist",
     external: [
-      "@dfinity/auth-client",
-      "@dfinity/principal",
-      "@dfinity/candid",
-      "@dfinity/agent",
-      "@dfinity/identity",
-      "@dfinity/utils",
-      "@slide-computer/signer",
-      "@slide-computer/signer-agent",
-      "@slide-computer/signer-extension",
-      "@slide-computer/signer-storage",
-      "@slide-computer/signer-transport-stoic",
-      "@slide-computer/signer-web",
+      // Keep large optional dependencies external
       "@walletconnect/ethereum-provider",
       "ethers",
       "ic-siwe-js",
       "viem",
+      // Bundle everything else to avoid ESM/CJS issues
+      // This includes @dfinity/* and @slide-computer/* packages
     ],
     formats: ["es"],
     dtsOptions: {
@@ -121,7 +112,6 @@ export default defineConfig({
   }),
   
   build: {
-    sourcemap: true,
     minify: isProd ? 'terser' : false,
     lib: {
       entry: currentConfig.entry,
@@ -217,6 +207,8 @@ export default defineConfig({
   define: {
     "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
     global: "globalThis",
+    // Polyfill 'self' for SSR compatibility
+    self: "globalThis",
     ...(buildPackage === 'solana' && {
       'global.Buffer': 'Buffer',
       'globalThis.Buffer': 'Buffer',
@@ -229,15 +221,15 @@ export default defineConfig({
       "@": resolve(__dirname, buildPackage === 'main' ? "./src" : `./packages/${buildPackage}/src`),
       "@types": resolve(__dirname, buildPackage === 'main' ? "src/types" : `packages/${buildPackage}/src/types`),
       "@src": resolve(__dirname, buildPackage === 'main' ? "src" : `packages/${buildPackage}/src`),
-      "iso-url": resolve(__dirname, "src/utils/url-node.ts"),
       ...(needsNodePolyfills ? {
         buffer: "buffer/",
         process: "process/browser",
         stream: "stream-browserify",
         util: "util/",
       } : {}),
-      // Fix for @dfinity/identity ESM imports
+      // Fix for @dfinity/identity ESM imports - add .js extensions
       "@dfinity/identity/lib/cjs/identity/partial": "@dfinity/identity/lib/cjs/identity/partial.js",
+      "@dfinity/identity/lib/esm/identity/partial": "@dfinity/identity/lib/esm/identity/partial.js",
     },
     extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
   },
@@ -262,6 +254,15 @@ export default defineConfig({
       ],
     },
     include: [
+      // Pre-bundle problematic dependencies
+      "@dfinity/agent",
+      "@dfinity/identity", 
+      "@dfinity/candid",
+      "@dfinity/principal",
+      "@dfinity/auth-client",
+      "@dfinity/utils",
+      "borc",
+      "bignumber.js",
       ...(needsNodePolyfills ? [
         "buffer",
         "process/browser",

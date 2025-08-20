@@ -1,3 +1,6 @@
+// Polyfill globals for SSR compatibility - must be first import
+import './utils/globals';
+
 import { ActorSubclass } from "@dfinity/agent";
 import { ICRC2_IDL } from "./did/icrc2.idl.js";
 import { Adapter, GlobalPnpConfig } from "./types/index.d";

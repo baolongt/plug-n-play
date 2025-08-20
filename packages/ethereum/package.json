@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-ethereum",
-  "version": "0.0.1-beta.5",
+  "version": "0.0.1-beta.6",
   "description": "Ethereum wallet adapter for PNP (Sign-In with Ethereum)",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -23,7 +23,6 @@
     "@dfinity/agent": "^2.4.1",
     "@dfinity/identity": "^2.4.1",
     "@dfinity/principal": "^2.4.1",
-    "@walletconnect/ethereum-provider": "^2.21.8",
     "ethers": "^6.15.0",
     "ic-siwe-js": "^0.2.5",
     "viem": "^2.33.3"

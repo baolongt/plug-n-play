@@ -1,5 +1,6 @@
 import { PnpState, StateHistory, StateTransition } from './StateManager';
 import { ErrorManager } from './ErrorManager';
+import { getStorage } from '../utils/browser';
 
 export interface StatePersistenceOptions {
   key: string;
@@ -16,7 +17,7 @@ export class StatePersistenceManager {
   constructor(errorManager: ErrorManager, options: StatePersistenceOptions) {
     this.errorManager = errorManager;
     this.options = {
-      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      storage: getStorage() as Storage | undefined,
       maxHistorySize: 100,
       autoRecover: true,
       validateOnLoad: true,

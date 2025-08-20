@@ -5,6 +5,7 @@ import { AuthClient } from "@dfinity/auth-client";
 import { type Wallet, Adapter } from "../../types/index.d";
 import { BaseAdapter } from "../BaseAdapter";
 import { createAccountFromPrincipal } from "../../utils";
+import { getScreenDimensions } from "../../utils/browser";
 import { IIAdapterConfig } from '../../types/AdapterConfigs';
 import { isIIAdapterConfig } from '../../types/AdapterConfigs';
 
@@ -118,7 +119,10 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
         derivationOrigin: this.config.derivationOrigin,
         identityProvider: this.config.iiProviderUrl || 'https://id.ai',
         maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
-        windowOpenerFeatures: `width=500,height=600,left=${window.screen.width / 2 - 250},top=${window.screen.height / 2 - 300}`,
+        windowOpenerFeatures: (() => {
+          const screen = getScreenDimensions();
+          return `width=500,height=600,left=${screen.width / 2 - 250},top=${screen.height / 2 - 300}`;
+        })(),
         onSuccess: async () => {
           checkCompleted = true;
           this.logger.debug('[II] Login success callback triggered');
