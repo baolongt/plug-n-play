@@ -20,8 +20,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup npm
+        uses: npm/action-setup@v4
         with:
           version: 9
           run_install: false  # Skip automatic install to use manual command
@@ -30,13 +30,13 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install
+        run: npm install
 
       - name: Run Vitest
-        run: pnpm run test
+        run: npm run test
 
       - name: Upload Test Artifacts
         if: failure()
