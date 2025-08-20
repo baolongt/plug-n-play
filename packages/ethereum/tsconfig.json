@@ -5,7 +5,8 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@windoge98/plug-n-play": ["../../src/*"]
+      "@windoge98/plug-n-play": ["../../src/*"],
+      "ic-siwe-js": ["../../node_modules/ic-siwe-js/dist/index.d.ts"]
     }
   },
   "include": [

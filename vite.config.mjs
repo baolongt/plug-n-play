@@ -172,7 +172,8 @@ export default defineConfig({
     commonjsOptions: {
       include: [/node_modules/],
       transformMixedEsModules: true,
-      esmExternals: true,
+      esmExternals: ['@dfinity/identity'],
+      requireReturnsDefault: 'auto',
     },
     outDir: currentConfig.outDir,
     emptyOutDir: true,
@@ -209,7 +210,10 @@ export default defineConfig({
       process: "process/browser",
       stream: "stream-browserify",
       util: "util/",
+      // Fix for @dfinity/identity ESM imports
+      "@dfinity/identity/lib/cjs/identity/partial": "@dfinity/identity/lib/cjs/identity/partial.js",
     },
+    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
   },
   
   optimizeDeps: {

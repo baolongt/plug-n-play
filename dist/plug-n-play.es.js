@@ -2075,7 +2075,7 @@ function requireBuffer() {
     function numberIsNaN(obj) {
       return obj !== obj;
     }
-    const hexSliceLookupTable = function() {
+    const hexSliceLookupTable = (function() {
       const alphabet = "0123456789abcdef";
       const table = new Array(256);
       for (let i = 0; i < 16; ++i) {
@@ -2085,7 +2085,7 @@ function requireBuffer() {
         }
       }
       return table;
-    }();
+    })();
     function defineBigIntMethod(fn) {
       return typeof BigInt === "undefined" ? BufferBigIntNotDefined : fn;
     }
@@ -3157,14 +3157,14 @@ var ar = z((R) => {
   function W2(i) {
     return i !== i;
   }
-  var Kr = function() {
+  var Kr = (function() {
     let i = "0123456789abcdef", r = new Array(256);
     for (let t = 0; t < 16; ++t) {
       let e3 = t * 16;
       for (let n = 0; n < 16; ++n) r[e3 + n] = i[t] + i[n];
     }
     return r;
-  }();
+  })();
   function E2(i) {
     return typeof BigInt > "u" ? Zr : i;
   }
@@ -3586,7 +3586,7 @@ class IIAdapter extends BaseAdapter {
       let checkCompleted = false;
       const loginOptions = {
         derivationOrigin: this.config.derivationOrigin,
-        identityProvider: this.config.iiProviderUrl || "https://identity.ic0.app",
+        identityProvider: this.config.iiProviderUrl || "https://id.ai",
         maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1e3 * 1e3 * 1e3),
         // Default 1 day
         windowOpenerFeatures: `width=500,height=600,left=${window.screen.width / 2 - 250},top=${window.screen.height / 2 - 300}`,

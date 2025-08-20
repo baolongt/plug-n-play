@@ -116,7 +116,7 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
       
       const loginOptions = {
         derivationOrigin: this.config.derivationOrigin,
-        identityProvider: this.config.iiProviderUrl || 'https://identity.ic0.app',
+        identityProvider: this.config.iiProviderUrl || 'https://id.ai',
         maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
         windowOpenerFeatures: `width=500,height=600,left=${window.screen.width / 2 - 250},top=${window.screen.height / 2 - 300}`,
         onSuccess: async () => {
