@@ -3,10 +3,10 @@ name: Run Vitest Tests
 on:
   push:
     branches:
-      - main
+      - '**'
   pull_request:
     branches:
-      - main
+      - '**'
 
 jobs:
   test:
@@ -18,16 +18,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup npm
-        uses: npm/action-setup@v4
-        with:
-          version: 9
-          run_install: false  # Skip automatic install to use manual command
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -35,19 +29,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run Vitest
-        run: npm run test
+      - name: Run Vitest with coverage
+        run: npm run coverage
 
       - name: Upload Test Artifacts
-        if: failure()
+        if: failure() && hashFiles('test-results/**') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
-          path: ./  # Make sure this path contains the results
+          name: test-results-${{ matrix.node-version }}
+          path: test-results
 
       - name: Upload Coverage Report
-        if: success()
+        if: success() && hashFiles('coverage/**') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
-          path: ./coverage  # Ensure this path exists after tests run
+          name: coverage-report-${{ matrix.node-version }}
+          path: coverage  # Ensure this path exists after tests run

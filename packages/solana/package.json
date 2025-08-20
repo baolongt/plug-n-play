@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-solana",
-  "version": "0.0.1-beta.3",
+  "version": "0.0.1-beta.4",
   "description": "Solana wallet adapter for PNP (Sign-In with Solana)",
   "main": "dist/index.js",
   "module": "dist/index.es.js",

@@ -10,6 +10,7 @@ import inject from "@rollup/plugin-inject";
 // Determine build environment and package
 const isProd = process.env.NODE_ENV === "production";
 const buildPackage = process.env.BUILD_PACKAGE || "main"; // 'main', 'solana', 'metamask', 'rabby', or 'ethereum'
+const needsNodePolyfills = buildPackage === 'solana' || buildPackage === 'ethereum';
 
 // Package-specific configurations
 const packageConfigs = {
@@ -120,7 +121,7 @@ export default defineConfig({
   }),
   
   build: {
-    sourcemap: !isProd,
+    sourcemap: true,
     minify: isProd ? 'terser' : false,
     lib: {
       entry: currentConfig.entry,
@@ -130,6 +131,25 @@ export default defineConfig({
     },
     rollupOptions: {
       external: currentConfig.external,
+      onwarn(warning, warn) {
+        // Suppress "this" keyword warnings from @slide-computer libraries
+        if (warning.code === 'THIS_IS_UNDEFINED') {
+          return;
+        }
+        // Suppress circular dependency warnings from known libraries
+        if (warning.code === 'CIRCULAR_DEPENDENCY' && (
+          warning.message.includes('@slide-computer') ||
+          warning.message.includes('viem') ||
+          warning.message.includes('ox')
+        )) {
+          return;
+        }
+        // Suppress unused export warnings
+        if (warning.code === 'UNUSED_EXTERNAL_IMPORT') {
+          return;
+        }
+        warn(warning);
+      },
       output: {
         format: currentConfig.formats[0],
         exports: "named",
@@ -151,22 +171,26 @@ export default defineConfig({
             'viem': 'viem',
             '@windoge98/plug-n-play': 'PNP',
           }),
-          // Always provide globals for polyfills
-          'buffer': 'buffer',
-          'process': 'process',
+          ...(needsNodePolyfills && {
+            // Provide globals for polyfills only when needed
+            'buffer': 'buffer',
+            'process': 'process',
+          }),
         },
         ...(currentConfig.manualChunks && {
           manualChunks: currentConfig.manualChunks,
         }),
       },
       plugins: [
-        inject({
-          Buffer: ["buffer", "Buffer"],
-          process: ["process", "process"],
-          ...(buildPackage === 'solana' && {
-            global: "globalThis",
-          }),
-        }),
+        ...(needsNodePolyfills ? [
+          inject({
+            Buffer: ["buffer", "Buffer"],
+            process: ["process", "process"],
+            ...(buildPackage === 'solana' && {
+              global: "globalThis",
+            }),
+          })
+        ] : []),
       ],
     },
     commonjsOptions: {
@@ -206,10 +230,12 @@ export default defineConfig({
       "@types": resolve(__dirname, buildPackage === 'main' ? "src/types" : `packages/${buildPackage}/src/types`),
       "@src": resolve(__dirname, buildPackage === 'main' ? "src" : `packages/${buildPackage}/src`),
       "iso-url": resolve(__dirname, "src/utils/url-node.ts"),
-      buffer: "buffer/",
-      process: "process/browser",
-      stream: "stream-browserify",
-      util: "util/",
+      ...(needsNodePolyfills ? {
+        buffer: "buffer/",
+        process: "process/browser",
+        stream: "stream-browserify",
+        util: "util/",
+      } : {}),
       // Fix for @dfinity/identity ESM imports
       "@dfinity/identity/lib/cjs/identity/partial": "@dfinity/identity/lib/cjs/identity/partial.js",
     },
@@ -226,16 +252,20 @@ export default defineConfig({
         global: "globalThis",
       },
       plugins: [
-        NodeGlobalsPolyfillPlugin({
-          buffer: true,
-          process: true,
-        }),
-        NodeModulesPolyfillPlugin(),
+        ...(needsNodePolyfills ? [
+          NodeGlobalsPolyfillPlugin({
+            buffer: true,
+            process: true,
+          }),
+          NodeModulesPolyfillPlugin(),
+        ] : []),
       ],
     },
     include: [
-      "buffer",
-      "process/browser",
+      ...(needsNodePolyfills ? [
+        "buffer",
+        "process/browser",
+      ] : []),
     ],
   },
   
