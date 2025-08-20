@@ -1,0 +1,178 @@
+name: Documentation Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  # Build docs for PRs
+  build-pr-docs:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate documentation
+        run: npm run docs:build
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Deploy PR preview
+        run: |
+          PR_DIR="pr-${{ github.event.pull_request.number }}"
+          rm -rf gh-pages/${PR_DIR}
+          cp -r docs gh-pages/${PR_DIR}
+          
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ${PR_DIR}
+          git commit -m "Deploy PR #${{ github.event.pull_request.number }} preview" || echo "No changes"
+          git push
+
+      - name: Find existing comment
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '📚 Documentation Preview'
+
+      - name: Create or update comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 📚 Documentation Preview
+            
+            The documentation for this PR has been deployed!
+            
+            🔗 **Preview URL**: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-${{ github.event.pull_request.number }}/
+            
+            This preview will be automatically updated when you push new commits to this PR.
+            
+            ---
+            <sub>Last updated: ${{ github.sha }}</sub>
+          edit-mode: replace
+
+  # Clean up PR docs when closed
+  cleanup-pr-docs:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Remove PR preview
+        run: |
+          PR_DIR="pr-${{ github.event.pull_request.number }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          if [ -d "${PR_DIR}" ]; then
+            rm -rf ${PR_DIR}
+            git add .
+            git commit -m "Remove PR #${{ github.event.pull_request.number }} preview"
+            git push
+          fi
+
+      - name: Find existing comment
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '📚 Documentation Preview'
+
+      - name: Update comment
+        if: steps.fc.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 📚 Documentation Preview
+            
+            ✅ The documentation preview has been removed.
+            
+            The PR was ${{ github.event.pull_request.merged && 'merged' || 'closed' }}.
+          edit-mode: replace
+
+  # Deploy main docs
+  deploy-main-docs:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate documentation
+        run: npm run docs:build
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Deploy main docs
+        run: |
+          # Clean root docs but preserve PR previews
+          cd gh-pages
+          find . -maxdepth 1 -type f ! -name '.git*' -delete
+          find . -maxdepth 1 -type d ! -name '.' ! -name '.git' ! -name 'pr-*' -exec rm -rf {} +
+          
+          # Copy new docs to root
+          cp -r ../docs/* .
+          
+          # Create index for PR previews if they exist
+          if ls -d pr-*/ 2>/dev/null; then
+            echo "<h2>Pull Request Previews</h2><ul>" > pr-index.html
+            for dir in pr-*/; do
+              pr_num=${dir#pr-}
+              pr_num=${pr_num%/}
+              echo "<li><a href='${dir}'>PR #${pr_num}</a></li>" >> pr-index.html
+            done
+            echo "</ul>" >> pr-index.html
+          fi
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Deploy main documentation" || echo "No changes"
+          git push
