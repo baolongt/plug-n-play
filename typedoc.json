@@ -1,0 +1,31 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "./src/index.ts",
+    "./packages/solana/src/index.ts", 
+    "./packages/ethereum/src/index.ts"
+  ],
+  "out": "./docs",
+  "name": "@windoge98/plug-n-play",
+  "navigationLinks": {
+    "GitHub": "https://github.com/windoge98/w98-pnp",
+    "NPM": "https://www.npmjs.com/package/@windoge98/plug-n-play"
+  },
+  "includeVersion": true,
+  "sidebarLinks": {
+    "GitHub": "https://github.com/windoge98/w98-pnp",
+    "NPM": "https://www.npmjs.com/package/@windoge98/plug-n-play"
+  },
+  "plugin": [],
+  "theme": "default",
+  "lightHighlightTheme": "github-light",
+  "darkHighlightTheme": "github-dark",
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "gitRevision": "main",
+  "hideGenerator": false,
+  "searchInComments": true,
+  "readme": "./README.md"
+}
