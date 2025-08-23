@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-walletconnect",
-  "version": "0.1.0-beta.13",
+  "version": "0.1.0-beta.14",
   "description": "WalletConnect adapter for PNP (Plug N Play)",
   "main": "./dist/index.js",
   "module": "./dist/index.es.js",
@@ -36,12 +36,12 @@
     "@dfinity/principal": "^2.2.1",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/web3.js": "^1.98.0",
-    "bs58": "^5.0.0"
+    "bs58": "^5.0.0 || ^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.6",
     "typescript": "^5.9.2",
-    "vite": "^5.4.14"
+    "vite": "^7.1.2"
   },
   "keywords": [
     "walletconnect",

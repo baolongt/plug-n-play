@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/plug-n-play",
-  "version": "0.1.0-beta.13",
+  "version": "0.1.0-beta.14",
   "description": "Wallet wrapper/adapter for easy authentication on the Internet Computer",
   "module": "dist/plug-n-play.es.js",
   "main": "dist/index.js",
@@ -104,7 +104,7 @@
     "vite": "7.1.2",
     "vite-plugin-compression": "^0.5.1",
     "vite-plugin-dts": "4.5.4",
-    "vite-plugin-static-copy": "3.1.1",
+    "vite-plugin-static-copy": "3.1.2",
     "vitest": "3.2.4"
   },
   "engines": {
