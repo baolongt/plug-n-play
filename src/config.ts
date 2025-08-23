@@ -98,11 +98,13 @@ export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
         siwsProviderCanisterId: providers.siws,
         siweProviderCanisterId: providers.siwe,
         frontendCanisterId: providers.frontend,
-        // Adapter-specific overrides (flat merge)
+        // Adapter-specific overrides (excluding 'enabled' and 'config')
         ...Object.fromEntries(
           Object.entries(override || {})
-            .filter(([k]) => k !== 'enabled')
-        )
+            .filter(([k]) => k !== 'enabled' && k !== 'config')
+        ),
+        // Merge user's config overrides last to allow per-adapter customization
+        ...(override?.config || {})
       }
     };
   }

@@ -9,8 +9,8 @@ import inject from "@rollup/plugin-inject";
 
 // Determine build environment and package
 const isProd = process.env.NODE_ENV === "production";
-const buildPackage = process.env.BUILD_PACKAGE || "main"; // 'main', 'solana', 'metamask', 'rabby', or 'ethereum'
-const needsNodePolyfills = buildPackage === 'solana' || buildPackage === 'ethereum';
+const buildPackage = process.env.BUILD_PACKAGE || "main"; // 'main', 'metamask', 'okx', 'phantom', 'coinbase', etc.
+const needsNodePolyfills = ['metamask', 'okx', 'phantom', 'solflare', 'walletconnect', 'coinbase'].includes(buildPackage);
 
 // Package-specific configurations
 const packageConfigs = {
@@ -40,74 +40,178 @@ const packageConfigs = {
     },
     copyAssets: true,
   },
-  solana: {
-    entry: resolve(__dirname, "packages/solana/src/index.ts"),
-    name: "PNPSolana",
+  metamask: {
+    entry: resolve(__dirname, "packages/metamask/src/index.ts"),
+    name: "PNPMetaMask",
     fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
-    outDir: "packages/solana/dist",
+    outDir: "packages/metamask/dist",
     external: [
       "@dfinity/agent",
       "@dfinity/identity",
       "@dfinity/principal",
-      "@windoge98/plug-n-play",
-      /^@windoge98\/plug-n-play/,
-    ],
-    formats: ["es", "cjs"],
-    dtsOptions: {
-      insertTypesEntry: true,
-      rollupTypes: true,
-      outDir: "packages/solana/dist",
-      include: ["packages/solana/src/**/*", "packages/solana/src/assets.d.ts"],
-      exclude: ["**/*.test.ts", "**/*.spec.ts"],
-      tsConfigFilePath: "./packages/solana/tsconfig.json",
-    },
-    copyAssets: false,
-    assetsInlineLimit: 100000, // Inline images for Solana package
-    // Enable code splitting for large dependencies
-    manualChunks: {
-      'solana-web3': ['@solana/web3.js'],
-      'solana-adapters': [
-        '@solana/wallet-adapter-base',
-        '@solana/wallet-adapter-phantom',
-        '@solana/wallet-adapter-solflare',
-      ],
-    },
-  },
-  ethereum: {
-    entry: resolve(__dirname, "packages/ethereum/src/index.ts"),
-    name: "PNPEthereum",
-    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
-    outDir: "packages/ethereum/dist",
-    external: [
-      "@dfinity/agent",
-      "@dfinity/identity",
-      "@dfinity/principal",
-      "@walletconnect/ethereum-provider",
-      "ethers",
       "ic-siwe-js",
       "viem",
+      "viem/chains",
       "@windoge98/plug-n-play",
-      /^@windoge98\/plug-n-play/,
+      /^@windoge98\//,
     ],
     formats: ["es", "cjs"],
     dtsOptions: {
       insertTypesEntry: true,
       rollupTypes: true,
-      outDir: "packages/ethereum/dist",
-      include: ["packages/ethereum/src/**/*", "packages/ethereum/src/assets.d.ts"],
+      outDir: "packages/metamask/dist",
+      include: ["packages/metamask/src/**/*", "packages/metamask/src/assets.d.ts"],
       exclude: ["**/*.test.ts", "**/*.spec.ts"],
-      tsConfigFilePath: "./packages/ethereum/tsconfig.json",
+      tsConfigFilePath: "./packages/metamask/tsconfig.json",
     },
     copyAssets: false,
-    assetsInlineLimit: 100000, // Inline images for Ethereum package
+    assetsInlineLimit: 100000, // Inline MetaMask logo
+  },
+  okx: {
+    entry: resolve(__dirname, "packages/okx/src/index.ts"),
+    name: "PNPOkx",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/okx/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@solana/web3.js",
+      "@solana/wallet-adapter-base",
+      "bs58",
+      /^@windoge98\//,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/okx/dist",
+      include: ["packages/okx/src/**/*", "packages/okx/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/okx/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline OKX logo
+  },
+  phantom: {
+    entry: resolve(__dirname, "packages/phantom/src/index.ts"),
+    name: "PNPPhantom",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/phantom/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@solana/web3.js",
+      "@solana/wallet-adapter-base",
+      "@solana/wallet-adapter-phantom",
+      "bs58",
+      "buffer",
+      /^@windoge98\//,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/phantom/dist",
+      include: ["packages/phantom/src/**/*", "packages/phantom/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/phantom/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline Phantom logo
+  },
+  solflare: {
+    entry: resolve(__dirname, "packages/solflare/src/index.ts"),
+    name: "PNPSolflare",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/solflare/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@solana/web3.js",
+      "@solana/wallet-adapter-base",
+      "@solana/wallet-adapter-solflare",
+      "bs58",
+      "buffer",
+      /^@windoge98\//,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/solflare/dist",
+      include: ["packages/solflare/src/**/*", "packages/solflare/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/solflare/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline Solflare logo
+  },
+  walletconnect: {
+    entry: resolve(__dirname, "packages/walletconnect/src/index.ts"),
+    name: "PNPWalletConnect",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/walletconnect/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@solana/web3.js",
+      "@solana/wallet-adapter-base",
+      "@solana/wallet-adapter-walletconnect",
+      "bs58",
+      "buffer",
+      /^@windoge98\//,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/walletconnect/dist",
+      include: ["packages/walletconnect/src/**/*", "packages/walletconnect/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/walletconnect/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline WalletConnect logo
+  },
+  coinbase: {
+    entry: resolve(__dirname, "packages/coinbase/src/index.ts"),
+    name: "PNPCoinbase",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/coinbase/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "@solana/web3.js",
+      "@solana/wallet-adapter-base",
+      "@solana/wallet-adapter-coinbase",
+      "bs58",
+      "buffer",
+      /^@windoge98\//,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: true,
+      outDir: "packages/coinbase/dist",
+      include: ["packages/coinbase/src/**/*", "packages/coinbase/src/assets.d.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./packages/coinbase/tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline Coinbase logo
   },
 };
 
 const currentConfig = packageConfigs[buildPackage];
 
 export default defineConfig({
-  // Include assets for Solana and Ethereum packages
-  ...((buildPackage === 'solana' || buildPackage === 'ethereum') && {
+  // Include assets for MetaMask, OKX, Phantom, and Coinbase packages
+  ...((buildPackage === 'metamask' || buildPackage === 'okx' || buildPackage === 'phantom' || buildPackage === 'coinbase') && {
     assetsInclude: ['**/*.webp', '**/*.svg', '**/*.png', '**/*.jpg'],
   }),
   
@@ -144,23 +248,6 @@ export default defineConfig({
         format: currentConfig.formats[0],
         exports: "named",
         globals: {
-          ...(buildPackage === 'solana' && {
-            '@dfinity/agent': 'DfinityAgent',
-            '@dfinity/identity': 'DfinityIdentity',
-            '@dfinity/principal': 'DfinityPrincipal',
-            '@solana/web3.js': 'SolanaWeb3',
-            '@windoge98/plug-n-play': 'PNP',
-            'bs58': 'bs58',
-          }),
-          ...(buildPackage === 'ethereum' && {
-            '@dfinity/agent': 'DfinityAgent',
-            '@dfinity/identity': 'DfinityIdentity',
-            '@dfinity/principal': 'DfinityPrincipal',
-            '@walletconnect/ethereum-provider': 'WalletConnectEthereumProvider',
-            'ethers': 'ethers',
-            'viem': 'viem',
-            '@windoge98/plug-n-play': 'PNP',
-          }),
           ...(needsNodePolyfills && {
             // Provide globals for polyfills only when needed
             'buffer': 'buffer',
@@ -176,9 +263,6 @@ export default defineConfig({
           inject({
             Buffer: ["buffer", "Buffer"],
             process: ["process", "process"],
-            ...(buildPackage === 'solana' && {
-              global: "globalThis",
-            }),
           })
         ] : []),
       ],
@@ -209,11 +293,6 @@ export default defineConfig({
     global: "globalThis",
     // Polyfill 'self' for SSR compatibility
     self: "globalThis",
-    ...(buildPackage === 'solana' && {
-      'global.Buffer': 'Buffer',
-      'globalThis.Buffer': 'Buffer',
-      'window.Buffer': 'Buffer',
-    }),
   },
   
   resolve: {

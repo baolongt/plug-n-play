@@ -17,7 +17,7 @@ import { globalPerformanceMonitor } from './utils/PerformanceMonitor';
 // Re-export config types and creation function for easier consumption
 export { createPNPConfig, PnpState };
 export type { GlobalPnpConfig, StateResponse, StateTransition };
-export type { ActorSubclass, Adapter, GetActorOptions};
+export type { ActorSubclass, GetActorOptions};
 
 /**
  * Main interface for the PNP (Plug N Play) wallet adapter.
@@ -446,3 +446,19 @@ export {
   type AdapterExtension,
   type ExtractAdapterIds
 } from "./types/AdapterExtensions";
+
+// Export base adapter classes for external packages
+export { BaseAdapter } from './adapters/BaseAdapter';
+export type { AdapterConstructorArgs } from './adapters/BaseAdapter';
+export { BaseDelegationAdapter } from './adapters/BaseDelegationAdapter';
+export { BaseSignerAdapter } from './adapters/BaseSignerAdapter';
+export { BaseMultiChainAdapter } from './adapters/BaseMultiChainAdapter';
+export type { NetworkDetection, MultiChainConfig } from './adapters/BaseMultiChainAdapter';
+
+// Export SIWS/SIWE related adapters for cross-chain packages
+export { BaseSiwxAdapter } from './adapters/BaseSiwxAdapter';
+export { Adapter } from './types/index.d';
+export type { Wallet } from './types/index.d';
+
+// Export utilities needed by packages
+export { deriveAccountId, formatSiwsMessage } from './utils';

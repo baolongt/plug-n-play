@@ -11,6 +11,7 @@
     "esModuleInterop": true,
     "moduleResolution": "bundler",
     "allowJs": true,
+    "composite": true,
     "baseUrl": ".",
     "paths": {
       "@windoge98/plug-n-play": ["src/*"],

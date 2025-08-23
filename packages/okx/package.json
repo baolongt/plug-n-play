@@ -1,0 +1,58 @@
+{
+  "name": "@windoge98/pnp-okx",
+  "version": "0.1.0-beta.7",
+  "description": "OKX multi-chain wallet adapter for Plug-n-Play",
+  "main": "./dist/index.js",
+  "module": "./dist/index.es.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.es.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build:all": "echo 'Building OKX package...' && npm run build",
+    "build:ethereum": "echo 'Not applicable for OKX package'",
+    "build:solana": "echo 'Not applicable for OKX package'",
+    "build:okx": "npm run build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@windoge98/plug-n-play": "file:../..",
+    "@okxweb3/coin-solana": "^1.0.0"
+  },
+  "peerDependencies": {
+    "@dfinity/agent": "^2.1.3",
+    "@dfinity/identity": "^2.1.3",
+    "@dfinity/principal": "^2.1.3",
+    "@solana/web3.js": "^1.87.0",
+    "bs58": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "okx",
+    "wallet",
+    "web3",
+    "blockchain",
+    "multi-chain",
+    "ethereum",
+    "solana",
+    "internet-computer"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
