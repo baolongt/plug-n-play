@@ -165,25 +165,6 @@ pnp.getEnabledWallets(): AdapterConfig[]
 pnp.getAccount(): Account | null
 ```
 
-### Common Operations
-
-```typescript
-// ICP Balance
-const LEDGER_ID = "ryjl3-tyaaa-aaaaa-aaaba-cai";
-const actor = pnp.getActor(LEDGER_ID, ledgerIDL);
-const balance = await actor.icrc1_balance_of({ 
-  owner: Principal.fromText(account.owner),
-  subaccount: [] 
-});
-
-// Transfer
-await actor.icrc1_transfer({
-  to: { owner: Principal.fromText(recipient), subaccount: [] },
-  amount: BigInt(100_000_000), // 1 ICP in e8s
-  fee: [], memo: [], from_subaccount: [], created_at_time: []
-});
-```
-
 ## Resources
 
 - [Documentation](https://github.com/microdao-corporation/plug-n-play)

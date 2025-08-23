@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-metamask",
-  "version": "0.1.0-beta.10",
+  "version": "0.1.0-beta.13",
   "description": "MetaMask wallet adapter for PNP using SIWE",
   "type": "module",
   "main": "dist/index.js",
@@ -24,12 +24,14 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@windoge98/plug-n-play": "0.1.0-beta.10",
-    "@dfinity/agent": "^2.4.1",
-    "@dfinity/identity": "^2.4.1",
-    "@dfinity/principal": "^2.4.1",
     "ic-siwe-js": "^0.2.5",
     "viem": "^2.21.62"
+  },
+  "peerDependencies": {
+    "@windoge98/plug-n-play": ">=0.1.0-beta",
+    "@dfinity/agent": "^2.4.1",
+    "@dfinity/identity": "^2.4.1",
+    "@dfinity/principal": "^2.4.1"
   },
   "devDependencies": {
     "typescript": "^5.9.2",

@@ -44,6 +44,7 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
   private siweManager: SiweManager | null = null;
   private ethereumAddress: string | null = null;
   private connectingPromise: Promise<Wallet.Account> | null = null;
+  private connectionTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Prefer SIWE-specific canister keys to avoid accidentally picking SIWS
   protected resolveProviderCanisterId(): string {
@@ -68,6 +69,21 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
     // Restore the Ethereum address
     const storedEthAddress = await this.readExternalAddress(`${this.id}-eth-address`);
     if (storedEthAddress) this.ethereumAddress = storedEthAddress;
+    
+    // Verify ic-siwe-js state is also present
+    try {
+      const siweIdentity = localStorage.getItem('siweIdentity');
+      if (!siweIdentity) {
+        // ic-siwe-js state missing, clear our storage to force fresh login
+        this.logger.debug(`[${this.id}] ic-siwe-js state missing, clearing stored session`);
+        await this.clearStoredSession();
+        this.setState(Adapter.Status.READY);
+      }
+    } catch (error) {
+      this.logger.debug(`[${this.id}] Failed to check ic-siwe-js state:`, { error });
+      await this.clearStoredSession();
+      this.setState(Adapter.Status.READY);
+    }
   }
 
   protected async onClearStoredSession(): Promise<void> {
@@ -84,6 +100,41 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
       this.identity !== null &&
       !this.identity.getPrincipal().isAnonymous()
     );
+  }
+
+  private async handleConnectionFailure(error: any): Promise<void> {
+    // Clear timeout if still active
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+
+    // Clean up SIWE manager
+    if (this.siweManager) {
+      try {
+        this.siweManager.clear();
+      } catch (clearError) {
+        this.logger.debug(`[${this.id}] Error clearing SIWE manager:`, { clearError });
+      }
+      this.siweManager = null;
+    }
+
+    // Clear stored session
+    await this.clearStoredSession();
+
+    // Reset state based on error type
+    const errorMessage = error?.message || error?.toString() || '';
+    if (
+      errorMessage.includes('cancelled') ||
+      errorMessage.includes('rejected') ||
+      errorMessage.includes('timeout')
+    ) {
+      this.setState(Adapter.Status.DISCONNECTED);
+    } else {
+      this.setState(Adapter.Status.ERROR);
+    }
+
+    this.logger.error(`[${this.id}] Connection failed:`, error);
   }
 
   async connect(): Promise<Wallet.Account> {
@@ -116,12 +167,19 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
             };
           }
         } catch (error) {
-          this.logger.debug(`[${this.id}] Failed to restore from storage during connect attempt:`, error);
+          this.logger.debug(`[${this.id}] Failed to restore from storage during connect attempt:`, { error });
           await this.clearStoredSession();
         }
       }
 
       this.setState(Adapter.Status.CONNECTING);
+
+      // Set a connection timeout
+      const timeoutMs = 45000; // 45 seconds
+      this.connectionTimeout = setTimeout(() => {
+        this.logger.warn(`[${this.id}] Connection timeout after ${timeoutMs}ms`);
+        this.handleConnectionFailure(new Error("Connection timeout"));
+      }, timeoutMs);
 
       try {
         // Check if MetaMask is available
@@ -147,7 +205,24 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
         });
 
         // First, request account access from MetaMask
-        const accounts = await walletClient.requestAddresses();
+        let accounts: `0x${string}`[];
+        try {
+          accounts = await walletClient.requestAddresses();
+        } catch (error: any) {
+          // Handle user rejection or window close
+          if (
+            error.code === 4001 || // User rejected request
+            error.code === -32002 || // Request already pending
+            error.message?.includes("User rejected") ||
+            error.message?.includes("User denied") ||
+            error.message?.includes("rejected")
+          ) {
+            this.logger.debug(`[${this.id}] User rejected MetaMask connection`);
+            throw new Error("Connection cancelled by user");
+          }
+          throw error;
+        }
+
         if (!accounts || accounts.length === 0) {
           throw new Error("No Ethereum accounts available");
         }
@@ -162,7 +237,23 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
         // 1. Prepare the SIWE message
         // 2. Sign the message with the already-connected wallet
         // 3. Create the delegation identity
-        const delegationIdentity = await this.siweManager.login();
+        let delegationIdentity;
+        try {
+          delegationIdentity = await this.siweManager.login();
+        } catch (error: any) {
+          // Handle signing rejection or window close
+          if (
+            error.code === 4001 || // User rejected request
+            error.message?.includes("User rejected") ||
+            error.message?.includes("User denied") ||
+            error.message?.includes("rejected") ||
+            error.message?.includes("cancelled")
+          ) {
+            this.logger.debug(`[${this.id}] User rejected signing SIWE message`);
+            throw new Error("Signing cancelled by user");
+          }
+          throw error;
+        }
         
         if (!delegationIdentity) {
           throw new Error("SIWE login failed");
@@ -197,6 +288,13 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
         }
         
         this.logger.debug(`[${this.id}] Successfully connected and session stored.`);
+        
+        // Clear timeout on successful connection
+        if (this.connectionTimeout) {
+          clearTimeout(this.connectionTimeout);
+          this.connectionTimeout = null;
+        }
+        
         this.setState(Adapter.Status.CONNECTED);
         
         return {
@@ -204,8 +302,7 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
           subaccount: deriveAccountId(principal),
         };
       } catch (error) {
-        this.setState(Adapter.Status.ERROR);
-        this.logger.error(`[${this.id}] Failed to connect:`, error as Error);
+        await this.handleConnectionFailure(error);
         throw error;
       }
     })();
@@ -247,6 +344,12 @@ export class MetaMaskAdapter extends BaseSiwxAdapter<MetaMaskAdapterConfig> {
   }
 
   protected async disconnectInternal(): Promise<void> {
+    // Clear connection timeout if active
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+    
     this.ethereumAddress = null;
     if (this.siweManager) {
       this.siweManager.clear();
