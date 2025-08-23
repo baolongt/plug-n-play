@@ -2,25 +2,37 @@
 
 Unified wallet adapter for Internet Computer dApps with support for IC, Solana (SIWS), and Ethereum (SIWE) wallets.
 
+## Latest Updates (v0.1.0-beta.13)
+
+### MetaMask Session Persistence Fixed! 🎉
+
+- ✅ Sessions now persist across page refreshes
+- ✅ Proper cleanup when user closes MetaMask window
+- ✅ 45-second connection timeout prevents hanging states
+- ✅ Improved error messages for better UX
+
 ## Features
 
-- 🔌 **Multiple Wallets** - Internet Identity, NFID, Plug, Oisy, Phantom, Solflare, WalletConnect
-- 📦 **Modular** - Install only what you need (core, solana, ethereum packages)
+- 🔌 **Multiple Wallets** - Internet Identity, NFID, Plug, Oisy, MetaMask, Phantom, Solflare, WalletConnect, OKX, Coinbase
+- 📦 **Modular** - Install only what you need with separate wallet packages
 - 🚀 **Simple API** - Connect, disconnect, and interact with canisters easily
-- 🔐 **ICRC Standards** - Full support for IC wallet standards
+- 🔐 **Multi-Chain** - Support for IC, Solana (SIWS), and Ethereum (SIWE)
 - ⚡ **Lightweight** - Minimal dependencies, optimized bundles
+- 🔄 **Session Management** - Reliable session persistence across all wallets
 
 ## Installation
 
 ```bash
 # Core (IC wallets)
-npm install @windoge98/plug-n-play
+npm install @windoge98/plug-n-play@beta
 
-# Optional: Solana wallets
-npm install @windoge98/pnp-solana
-
-# Optional: Ethereum wallets (coming soon)
-npm install @windoge98/pnp-ethereum
+# Individual wallet packages
+npm install @windoge98/pnp-metamask@beta    # Ethereum - MetaMask
+npm install @windoge98/pnp-phantom@beta     # Solana - Phantom
+npm install @windoge98/pnp-solflare@beta    # Solana - Solflare
+npm install @windoge98/pnp-walletconnect@beta # Solana - WalletConnect
+npm install @windoge98/pnp-okx@beta         # Solana - OKX
+npm install @windoge98/pnp-coinbase@beta    # Solana - Coinbase Wallet
 ```
 
 ## Quick Start
@@ -51,6 +63,8 @@ await actor.someMethod();
 
 ```typescript
 import { createPNP, ConfigBuilder } from "@windoge98/plug-n-play";
+import { MetaMaskExtension } from "@windoge98/pnp-metamask";
+import { PhantomExtension } from "@windoge98/pnp-phantom";
 
 // Option 1: Object configuration with extensions
 const pnp = createPNP({
@@ -66,15 +80,17 @@ const pnp = createPNP({
     siwe: 'SIWE_CANISTER_ID', 
     frontend: 'FRONTEND_CANISTER_ID'
   },
-  extensions: [SolanaExtension], // Declarative extension loading
+  extensions: [MetaMaskExtension, PhantomExtension], // Modular wallet support
   adapters: {
     ii: { enabled: true },
     plug: { enabled: true },
-    phantomSiws: { enabled: true },
-    walletconnectSiws: { 
+    metamask: { 
       enabled: true,
-      walletConnectProjectId: "YOUR_PROJECT_ID",
-      appName: "Your App"
+      siweProviderCanisterId: 'YOUR_SIWE_CANISTER_ID'
+    },
+    phantom: { 
+      enabled: true,
+      siwsProviderCanisterId: 'YOUR_SIWS_CANISTER_ID'
     }
   }
 });
@@ -109,24 +125,35 @@ Instead of manual registration loops, use adapter extensions:
 
 ```typescript
 import { createPNP } from '@windoge98/plug-n-play';
-import { SolanaExtension } from '@windoge98/pnp-solana';
-import { EthereumExtension } from '@windoge98/pnp-ethereum';
+import { MetaMaskExtension } from '@windoge98/pnp-metamask';
+import { PhantomExtension } from '@windoge98/pnp-phantom';
+import { WalletConnectExtension } from '@windoge98/pnp-walletconnect';
 
 // Declarative configuration with extensions
 const pnp = createPNP({
-  extensions: [SolanaExtension, EthereumExtension],
-  providers: { siws: 'YOUR_SIWS_CANISTER_ID' },
+  extensions: [MetaMaskExtension, PhantomExtension, WalletConnectExtension],
+  providers: { 
+    siws: 'YOUR_SIWS_CANISTER_ID',
+    siwe: 'YOUR_SIWE_CANISTER_ID'
+  },
   adapters: {
-    phantomSiws: { enabled: true },
-    metamask: { enabled: true }
+    metamask: { enabled: true },
+    phantom: { enabled: true },
+    walletconnect: { 
+      enabled: true,
+      projectId: 'YOUR_PROJECT_ID'
+    }
   }
 });
 
 // Or with builder pattern
 const pnp2 = ConfigBuilder.create()
-  .withExtensions(SolanaExtension, EthereumExtension)
-  .withProviders({ siws: 'YOUR_SIWS_CANISTER_ID' })
-  .withAdapter('phantomSiws', { enabled: true })
+  .withExtensions(MetaMaskExtension, PhantomExtension)
+  .withProviders({ 
+    siws: 'YOUR_SIWS_CANISTER_ID',
+    siwe: 'YOUR_SIWE_CANISTER_ID'
+  })
+  .withAdapter('metamask', { enabled: true })
   .build();
 ```
 
