@@ -1,9 +1,7 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": [
-    "./src/index.ts",
-    "./packages/solana/src/index.ts", 
-    "./packages/ethereum/src/index.ts"
+    "./src/index.ts"
   ],
   "out": "./docs",
   "name": "@windoge98/plug-n-play",

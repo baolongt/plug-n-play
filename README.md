@@ -2,15 +2,6 @@
 
 Unified wallet adapter for Internet Computer dApps with support for IC, Solana (SIWS), and Ethereum (SIWE) wallets.
 
-## Latest Updates (v0.1.0-beta.13)
-
-### MetaMask Session Persistence Fixed! 🎉
-
-- ✅ Sessions now persist across page refreshes
-- ✅ Proper cleanup when user closes MetaMask window
-- ✅ 45-second connection timeout prevents hanging states
-- ✅ Improved error messages for better UX
-
 ## Features
 
 - 🔌 **Multiple Wallets** - Internet Identity, NFID, Plug, Oisy, MetaMask, Phantom, Solflare, WalletConnect, OKX, Coinbase
