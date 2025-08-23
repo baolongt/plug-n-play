@@ -5,176 +5,221 @@
     principalId,
     connectWallet,
     disconnectWallet,
-    pnpInstance,
-    selectedWalletId,
+    lastEvent,
+    connectingWalletId,
+    error
   } from "../stores/pnp";
   import { balance, fetchBalance } from "../stores/ledger";
-  import { get } from "svelte/store";
 
-  let connecting = false;
-  let error: string | null = null;
-  let userBalance: bigint | null = null;
+  const formatICP = (b: bigint | null): string => {
+    if (!b) return "...";
+    const s = b.toString().padStart(9, "0");
+    const i = s.slice(0, -8) || "0";
+    const d = s.slice(-8).replace(/0+$/, "");
+    return d ? `${i}.${d}` : i;
+  };
 
-  function formatICPBalance(balance: bigint | null): string {
-    if (!balance) return "...";
-    const decimals = 8;
-    const balanceStr = balance.toString().padStart(decimals + 1, "0");
-    const integerPart = balanceStr.slice(0, -decimals) || "0";
-    const decimalPart = balanceStr.slice(-decimals);
-    // Remove trailing zeros from decimal part
-    const trimmedDecimalPart = decimalPart.replace(/0+$/, "");
-    return trimmedDecimalPart 
-      ? `${integerPart}.${trimmedDecimalPart}`
-      : integerPart;
-  }
-
-  async function handleConnect(walletId: string) {
-    connecting = true;
-    error = null;
+  const handleConnect = async (walletId: string) => {
+    error.set(null);
     try {
-      const pnp = get(pnpInstance);
-      if (!pnp) {
-        throw new Error('PNP not initialized');
-      }
-
-      const account = await connectWallet(walletId);
-      console.log("account", account);
+      await connectWallet(walletId);
       await fetchBalance();
     } catch (e) {
-      error = e.message;
-      console.error('Failed to connect:', e);
-    } finally {
-      connecting = false;
+      error.set(e.message);
     }
-  }
-
-  balance.subscribe((value) => {
-    if (value) {
-      userBalance = value;
-    }
-  });
+  };
 </script>
 
-<div class="sign-in">
+<div class="container">
   {#if $isConnected}
-    <div class="connected-info">
-      <div class="status connected">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-          <polyline points="22 4 12 14.01 9 11.01"></polyline>
-        </svg>
-        <span>Connected</span>
-      </div>
-      <div class="principal">
-        <h3>Principal ID</h3>
+    <div class="card">
+      <div class="status">✅ Connected</div>
+      <div class="info">
+        <label>Principal ID</label>
         <code>{$principalId}</code>
       </div>
-      <div class="balance">
-        <h3>ICP Balance</h3>
-        <code>{formatICPBalance(userBalance)} ICP</code>
+      <div class="info">
+        <label>ICP Balance</label>
+        <code>{formatICP($balance)} ICP</code>
       </div>
-      <button class="disconnect" on:click={disconnectWallet}>
-        Disconnect Wallet
+      <button class="btn-disconnect" on:click={disconnectWallet}>
+        Disconnect
       </button>
     </div>
   {:else}
-    <div class="wallet-options">
+    <div class="card">
       <h2>Connect Wallet</h2>
-      <p class="subtitle">Choose your preferred wallet to sign in</p>
-
-      <div class="wallet-list">
-        <h2>Connect your wallet</h2>
-        <div class="wallets">
-          {#each availableWallets as wallet}
-            <button
-              class="wallet-button"
-              disabled={connecting}
-              on:click|preventDefault={() => handleConnect(wallet.id)}
-            >
-              <img src={wallet.logo} alt={wallet.name} />
-            </button>
-          {/each}
-        </div>
-        {#if error}
-          <div class="error">{error}</div>
-        {/if}
+      <div class="wallets">
+        {#each $availableWallets as wallet}
+          <button
+            class="wallet-btn"
+            disabled={$connectingWalletId === wallet.id}
+            on:click={() => handleConnect(wallet.id)}
+          >
+            <div class="wallet-info">
+              <img src={wallet.logo} alt={wallet.walletName} />
+              <span>{wallet.walletName}</span>
+              {#if wallet.chain}
+                <span class="chain-badge chain-{wallet.chain.toLowerCase()}">{wallet.chain}</span>
+              {/if}
+            </div>
+            {#if $connectingWalletId === wallet.id}
+              <span class="spinner">⟳</span>
+            {/if}
+          </button>
+        {/each}
       </div>
+      {#if $error}
+        <div class="error">{$error}</div>
+      {/if}
+    </div>
+  {/if}
+
+  {#if $lastEvent}
+    <div class="card events">
+      <h3>Latest Event</h3>
+      <pre>{JSON.stringify($lastEvent, null, 2)}</pre>
     </div>
   {/if}
 </div>
 
 <style>
-  .sign-in {
+  .container {
     max-width: 480px;
     margin: 0 auto;
     padding: 2rem;
   }
 
-  .wallet-options {
+  .card {
     background: white;
     border-radius: 12px;
     padding: 2rem;
-    box-shadow:
-      0 4px 6px -1px rgb(0 0 0 / 0.1),
-      0 2px 4px -2px rgb(0 0 0 / 0.1);
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   }
 
-  h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+  h2, h3 {
+    margin: 0 0 1rem;
     color: #1a202c;
   }
 
-  .subtitle {
-    margin: 0.5rem 0 1.5rem;
-    color: #4a5568;
-    font-size: 0.875rem;
+  .status {
+    color: #2f855a;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
   }
 
-  .wallet-list {
+  .info {
+    background: #f7fafc;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .info label {
+    display: block;
+    font-size: 0.875rem;
+    color: #4a5568;
+    margin-bottom: 0.5rem;
+  }
+
+  code {
+    font-family: monospace;
+    word-break: break-all;
+    color: #2d3748;
+  }
+
+  .wallets {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
 
-  .wallet-button {
+  .wallet-btn {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: 100%;
     padding: 0.75rem 1rem;
     background: #f7fafc;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
-    font-size: 1rem;
-    color: #2d3748;
     cursor: pointer;
     transition: all 0.2s;
   }
 
-  .wallet-button:hover:not(:disabled) {
+  .wallet-btn:hover:not(:disabled) {
     background: #edf2f7;
     border-color: #cbd5e0;
   }
 
-  .wallet-button:disabled {
+  .wallet-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .wallet-arrow {
-    color: #718096;
+  .wallet-btn img {
+    width: 24px;
+    height: 24px;
+  }
+
+  .wallet-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+  }
+
+  .wallet-info span {
+    color: #2d3748;
+    font-weight: 500;
+  }
+
+  .chain-badge {
+    margin-left: auto;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .chain-icp {
+    background: #e6f3ff;
+    color: #0074e4;
+  }
+
+  .chain-sol {
+    background: #f0e6ff;
+    color: #9945ff;
+  }
+
+  .chain-eth {
+    background: #f5f5ff;
+    color: #627eea;
+  }
+
+  .spinner {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .btn-disconnect {
+    width: 100%;
+    padding: 0.75rem;
+    background: #fff5f5;
+    border: 1px solid #feb2b2;
+    border-radius: 8px;
+    color: #c53030;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-disconnect:hover {
+    background: #fed7d7;
   }
 
   .error {
@@ -187,60 +232,12 @@
     font-size: 0.875rem;
   }
 
-  .connected-info {
-    background: white;
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow:
-      0 4px 6px -1px rgb(0 0 0 / 0.1),
-      0 2px 4px -2px rgb(0 0 0 / 0.1);
-  }
-
-  .status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .status.connected {
-    color: #2f855a;
-  }
-
-  .principal {
+  .events pre {
     background: #f7fafc;
     border-radius: 8px;
     padding: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .principal h3 {
-    margin: 0 0 0.5rem;
-    font-size: 0.875rem;
-    color: #4a5568;
-  }
-
-  code {
-    display: block;
-    word-break: break-all;
-    font-size: 0.875rem;
-    color: #2d3748;
-  }
-
-  .disconnect {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    background: #fff5f5;
-    border: 1px solid #feb2b2;
-    border-radius: 8px;
-    color: #c53030;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .disconnect:hover {
-    background: #fed7d7;
-    border-color: #fc8181;
+    font-size: 0.75rem;
+    max-height: 200px;
+    overflow-y: auto;
   }
 </style>

@@ -1,0 +1,50 @@
+{
+  "source": {
+    "include": ["src", "packages/solana/src", "packages/ethereum/src", "README.md"],
+    "includePattern": ".+\\.ts$",
+    "excludePattern": "(node_modules/|docs/|dist/|tests/)"
+  },
+  "plugins": ["plugins/markdown"],
+  "templates": {
+    "cleverLinks": false,
+    "monospaceLinks": false,
+    "default": {
+      "outputSourceFiles": true,
+      "includeDate": false,
+      "useLongnameInNav": false
+    }
+  },
+  "opts": {
+    "destination": "./docs",
+    "recurse": true,
+    "template": "node_modules/docdash",
+    "readme": "./README.md"
+  },
+  "docdash": {
+    "static": true,
+    "sort": true,
+    "sectionOrder": [
+      "Classes",
+      "Modules",
+      "Externals",
+      "Events",
+      "Namespaces",
+      "Mixins",
+      "Tutorials",
+      "Interfaces"
+    ],
+    "search": true,
+    "collapse": true,
+    "typedefs": true,
+    "removeQuotes": "none",
+    "scripts": [],
+    "menu": {
+      "Github": {
+        "href": "https://github.com/windoge98/w98-pnp",
+        "target": "_blank",
+        "class": "menu-item",
+        "id": "github-link"
+      }
+    }
+  }
+}

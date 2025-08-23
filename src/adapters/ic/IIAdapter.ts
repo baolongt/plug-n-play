@@ -1,132 +1,220 @@
-// src/adapters/IIAdapter.ts
+// src/adapters/ic/IIAdapter.ts
 
-import { Actor, HttpAgent, type ActorSubclass, Identity } from "@dfinity/agent";
+import { type ActorSubclass, Identity, HttpAgent } from "@dfinity/agent";
 import { AuthClient } from "@dfinity/auth-client";
+// Note: AuthClientTransport is not needed as we'll use AuthClient directly
 import { type Wallet, Adapter } from "../../types/index.d";
-import { Principal } from "@dfinity/principal";
-import { hexStringToUint8Array } from "@dfinity/utils";
-import dfinityLogo from "../../../assets/dfinity.webp";
-import { BaseIcAdapter } from "./BaseIcAdapter";
+import { BaseAdapter } from "../BaseAdapter";
+import { createAccountFromPrincipal } from "../../utils";
+import { getScreenDimensions } from "../../utils/browser";
+import { IIAdapterConfig } from '../../types/AdapterConfigs';
+import { isIIAdapterConfig } from '../../types/AdapterConfigs';
 
 // Extend BaseIcAdapter
-export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
-  static readonly logo: string = dfinityLogo;
-  static readonly walletName: string = "Internet Identity";
-  walletName: string = IIAdapter.walletName;
-  logo: string = IIAdapter.logo;
-  
+export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.Interface {
   // II specific properties
   private authClient: AuthClient | null = null;
   private agent: HttpAgent | null = null;
 
-  // Constructor calls super and does II specific initialization
-  constructor(config: Wallet.PNPConfig) {
-    super(config); // Call base constructor
+  constructor(args: { adapter: any; config: IIAdapterConfig } | IIAdapterConfig) {
+    console.log('[II] IIAdapter v2 - WITH SESSION CHECK FIX');
+    // Support simplified constructor in tests: new IIAdapter(config)
+    const normalized = ((): { adapter: any; config: IIAdapterConfig } => {
+      if ('config' in (args as any)) {
+        return args as { adapter: any; config: IIAdapterConfig };
+      }
+      return {
+        adapter: {
+          id: 'ii',
+          enabled: true,
+          walletName: 'Internet Identity',
+          logo: undefined,
+          website: 'https://internetcomputer.org',
+          chain: 'ICP',
+          adapter: IIAdapter,
+          config: {}
+        },
+        config: args as IIAdapterConfig,
+      };
+    })();
+
+    if (!isIIAdapterConfig(normalized.config)) {
+      throw new Error('Invalid config for IIAdapter');
+    }
+    super(normalized as any);
     
-    // Initialize AuthClient immediately, using this.config
+    // Initialize AuthClient immediately for Safari compatibility
+    // This happens during app initialization, not during user interaction
+    this.initializeAuthClientSync();
+  }
+
+  private initializeAuthClientSync(): void {
+    console.log('[II] Initializing AuthClient...');
+    // Initialize AuthClient with transport for better session management
     AuthClient.create({
       idleOptions: {
-        idleTimeout: Number(this.config.adapters?.ii?.config?.timeout || this.config.timeout || 1000 * 60 * 60 * 24),
+        idleTimeout: Number(this.config.timeout ?? 1000 * 60 * 60 * 24), // Default 24 hours
         disableDefaultIdleCallback: true,
       },
-    }).then(client => {
+    }).then(async client => {
       this.authClient = client;
       this.authClient.idleManager?.registerCallback?.(() => this.refreshLogin());
+      console.log('[II] AuthClient created successfully');
+      
+      // Check if already authenticated on initialization
+      const isAuth = await client.isAuthenticated();
+      const identity = client.getIdentity();
+      const principal = identity?.getPrincipal();
+      
+      console.log('[II] Initial state after AuthClient creation:', {
+        isAuthenticated: isAuth,
+        hasIdentity: !!identity,
+        principal: principal?.toText(),
+        isAnonymous: principal?.isAnonymous()
+      });
     }).catch(err => {
-        console.error("[II] Failed to create AuthClient:", err);
-        this.setState(Adapter.Status.ERROR); // Use inherited setState
+      console.error('[II] Failed to create AuthClient:', err);
+      this.handleError('Failed to create AuthClient', err);
+      this.setState(Adapter.Status.ERROR);
     });
+  }
+
+  private async ensureAuthClient(): Promise<void> {
+    if (this.authClient) {
+      return;
+    }
+    
+    // Wait for AuthClient to be initialized
+    let attempts = 0;
+    while (!this.authClient && attempts < 50) { // Max 5 seconds
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    
+    if (!this.authClient) {
+      throw new Error('Failed to initialize AuthClient after 5 seconds');
+    }
+  }
+
+  async openChannel(): Promise<void> {
+    // No-op for II adapter - AuthClient is initialized in constructor
+    // This method exists for compatibility with other adapters
+    return Promise.resolve();
   }
 
   // Use the resolved config for agent initialization
   private async initAgent(identity: Identity): Promise<void> {
-    this.agent = new HttpAgent({
-      identity,
-      host: this.config.hostUrl, 
-      verifyQuerySignatures: this.config.verifyQuerySignatures
-    });
-    if (this.config.fetchRootKeys) { 
-      try {
-        await this.agent.fetchRootKey();
-      } catch (e) {
-        console.warn("[II] Unable to fetch root key. Check replica status.", e);
-      }
-    }
-  }
-
-  // Implement abstract methods
-  async isAvailable(): Promise<boolean> {
-    return true; // Always available
+    const agent = await this.buildHttpAgent({ identity });
+    this.agent = agent;
   }
 
   async connect(): Promise<Wallet.Account> {
     try {
       this.setState(Adapter.Status.CONNECTING);
+      console.log('[II] ========== CONNECT CALLED ==========');
+      console.log('[II] AuthClient exists:', !!this.authClient);
       
-      if (!this.authClient) {
-         await new Promise(resolve => setTimeout(resolve, 500)); 
-         if (!this.authClient) throw new Error("AuthClient failed to initialize.");
-      }
-
-      const isAuthenticated = await this.authClient.isAuthenticated();
-
-      if (!isAuthenticated) {
-        return new Promise<Wallet.Account>((resolve, reject) => {
-          this.authClient!.login({
-            derivationOrigin: this.config.derivationOrigin,
-            identityProvider: this.config.adapters?.ii?.config?.identityProvider || this.config.identityProvider, 
-            maxTimeToLive: this.config.delegationTimeout, 
-            onSuccess: () => {
-              this._continueLogin(this.config.hostUrl)
-                .then(account => {
-                  this.setState(Adapter.Status.READY);
-                  resolve(account);
-                })
-                .catch(reject);
-            },
-            onError: (error) => {
-              console.error("[II] Login error:", error);
-              this.disconnect().catch(() => {}); // Use inherited disconnect
-              this.setState(Adapter.Status.ERROR); 
-              reject(new Error("II Authentication failed: " + error));
-            },
-          });
+      // Ensure AuthClient is ready
+      await this.ensureAuthClient();
+      console.log('[II] AuthClient ensured');
+      
+      // Check if already authenticated before opening popup
+      console.log('[II] Checking isAuthenticated...');
+      const isAuthenticated = await this.authClient!.isAuthenticated();
+      console.log('[II] isAuthenticated result:', isAuthenticated);
+      
+      if (isAuthenticated) {
+        console.log('[II] User is authenticated, checking identity...');
+        const identity = this.authClient!.getIdentity();
+        const principal = identity?.getPrincipal();
+        
+        console.log('[II] Identity check:', {
+          hasIdentity: !!identity,
+          identityType: identity?.constructor?.name,
+          principal: principal?.toText(),
+          isAnonymous: principal?.isAnonymous(),
+          principalType: principal?.constructor?.name
         });
+        
+        if (identity && principal && !principal.isAnonymous()) {
+          console.log('[II] ✅ Valid session found, restoring WITHOUT popup');
+          const account = await this.createAccountFromIdentity(identity);
+          this.setState(Adapter.Status.CONNECTED);
+          return account;
+        } else {
+          console.log('[II] ❌ Identity invalid despite being authenticated');
+        }
+      } else {
+        console.log('[II] ❌ Not authenticated according to AuthClient');
       }
-
-      const account = await this._continueLogin(this.config.hostUrl); 
-      this.setState(Adapter.Status.READY);
-      return account;
+      
+      // Not authenticated or invalid session - open login popup
+      console.log('[II] 🚨 OPENING LOGIN POPUP');
+      return await this.performLogin();
     } catch (error) {
-        console.error("[II] Connect error:", error);
-        this.setState(Adapter.Status.ERROR);
-        await this.disconnect().catch(() => {}); // Use inherited disconnect
-        throw error;
+      console.error('[II] Connect error:', error);
+      this.setState(Adapter.Status.ERROR);
+      throw error;
     }
   }
 
-  private async _continueLogin(host: string): Promise<Wallet.Account> {
-    if (!this.authClient) throw new Error("AuthClient not available in _continueLogin");
-    try {
-      const identity = this.authClient.getIdentity();
-      const principal = identity.getPrincipal();
-      if (principal.isAnonymous()) {
-        throw new Error("Login resulted in anonymous principal");
-      }
-      
-      await this.initAgent(identity); 
-      return {
-        owner: principal,
-        // Derive subaccount using the method from BaseIcAdapter via getAccountId (implicitly)
-        // Or calculate directly if preferred, but using getAccountId promotes reuse
-        subaccount: hexStringToUint8Array(await this.getAccountId() || ""),
+  private async performLogin(): Promise<Wallet.Account> {
+    return new Promise<Wallet.Account>((resolve, reject) => {
+      const loginOptions = {
+        derivationOrigin: this.config.derivationOrigin,
+        identityProvider: this.config.iiProviderUrl || 'https://id.ai',
+        maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
+        windowOpenerFeatures: (() => {
+          const screen = getScreenDimensions();
+          return `width=500,height=600,left=${screen.width / 2 - 250},top=${screen.height / 2 - 300}`;
+        })(),
+        onSuccess: async () => {
+          this.logger.debug('[II] Login success callback triggered');
+          try {
+            const identity = this.authClient!.getIdentity();
+            const account = await this.createAccountFromIdentity(identity);
+            this.setState(Adapter.Status.CONNECTED);
+            resolve(account);
+          } catch (error) {
+            this.setState(Adapter.Status.ERROR);
+            reject(error);
+          }
+        },
+        onError: (error?: string) => {
+          this.handleError('Login error', error || 'Unknown error');
+          this.setState(Adapter.Status.ERROR);
+          reject(new Error(`II Authentication failed: ${error || 'Unknown error'}`));
+        },
       };
-    } catch (error) {
-      console.error("[II] Error during _continueLogin:", error);
-      this.setState(Adapter.Status.ERROR);
-      await this.disconnect().catch(() => {});
-      throw error;
+      
+      this.logger.debug('[II] Opening login popup');
+      this.authClient!.login(loginOptions);
+    });
+  }
+
+  private async createAccountFromIdentity(identity: Identity): Promise<Wallet.Account> {
+    if (!identity) {
+      throw new Error("No identity available after login");
     }
+
+    const principal = identity.getPrincipal();
+    this.logger.debug('[II] Principal from identity:', { principal: principal.toText() });
+
+    if (principal.isAnonymous()) {
+      throw new Error(
+        "Authentication failed: Anonymous principal returned. " +
+        "This usually means the authentication was cancelled or failed."
+      );
+    }
+    
+    await this.initAgent(identity);
+    
+    const account = await createAccountFromPrincipal(principal);
+    if (!account || !account.owner) {
+      throw new Error("Failed to create valid account from principal");
+    }
+    
+    return account;
   }
 
   async isConnected(): Promise<boolean> {
@@ -136,30 +224,32 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
   // Implementation for BaseIcAdapter actor caching
   protected createActorInternal<T>(
     canisterId: string, 
-    idl: any, 
+    idl: any,
+    _options?: {
+      requiresSigning?: boolean;
+    }
   ): ActorSubclass<T> {
     if (!this.agent) {
       throw new Error("Agent not initialized. Connect first.");
     }
-    return Actor.createActor(idl, {
-      agent: this.agent,
-      canisterId,
-    });
+
+    return this.createActorWithAgent<T>(this.agent, canisterId, idl);
   }
 
-  async getPrincipal(): Promise<Principal> {
+  async getPrincipal(): Promise<string> {
     if (!this.authClient) throw new Error("Not connected");
     const identity = this.authClient.getIdentity();
     if (!identity) throw new Error("Identity not available");
-    return identity.getPrincipal();
+    const principal = identity.getPrincipal();
+    return principal.toText();
   }
 
   private async refreshLogin(): Promise<void> {
-    console.debug("[II] Refreshing login due to idle timeout.");
     try {
-      await this.connect(); 
+      await this.ensureAuthClient();
+      await this.performLogin(); 
     } catch (error) {
-      console.error("[II] Failed to refresh login:", error);
+      this.handleError('Failed to refresh login', error);
       await this.disconnect().catch(() => {}); 
     }
   }
@@ -175,5 +265,22 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
   protected cleanupInternal(): void {
       this.authClient = null;
       this.agent = null;
+  }
+
+  /**
+   * Dispose of II-specific resources
+   * Ensures AuthClient and agent are properly cleaned up
+   */
+  protected async onDispose(): Promise<void> {
+    // Ensure logout if still connected
+    if (this.authClient) {
+      try {
+        await this.authClient.logout();
+      } catch (error) {
+        // Best effort - already disposing
+      }
+      this.authClient = null;
+    }
+    this.agent = null;
   }
 }

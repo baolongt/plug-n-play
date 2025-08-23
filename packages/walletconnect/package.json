@@ -1,0 +1,68 @@
+{
+  "name": "@windoge98/pnp-walletconnect",
+  "version": "0.1.0-beta.13",
+  "description": "WalletConnect adapter for PNP (Plug N Play)",
+  "main": "./dist/index.js",
+  "module": "./dist/index.es.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "cd ../.. && BUILD_PACKAGE=walletconnect vite build",
+    "dev": "BUILD_PACKAGE=walletconnect vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist node_modules",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@solana/wallet-adapter-walletconnect": "^0.1.16",
+    "base-x": "^5.0.1",
+    "buffer": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@windoge98/plug-n-play": ">=0.1.0-beta",
+    "@dfinity/agent": "^2.2.1",
+    "@dfinity/candid": "^2.2.1",
+    "@dfinity/identity": "^2.2.1",
+    "@dfinity/principal": "^2.2.1",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.6",
+    "typescript": "^5.9.2",
+    "vite": "^5.4.14"
+  },
+  "keywords": [
+    "walletconnect",
+    "solana",
+    "wallet",
+    "adapter",
+    "internet-computer",
+    "ic",
+    "siws",
+    "plug-n-play",
+    "pnp",
+    "multi-wallet"
+  ],
+  "author": "Windoge98",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/windoge98/plug-n-play.git",
+    "directory": "packages/walletconnect"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

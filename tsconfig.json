@@ -9,15 +9,17 @@
     "outDir": "./dist",
     "strict": false,
     "esModuleInterop": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowJs": true,
+    "composite": true,
     "baseUrl": ".",
     "paths": {
       "@windoge98/plug-n-play": ["src/*"],
       "*": ["src/*"],
       "$lib/*": ["./src/lib/*"],
       "$app/*": ["./node_modules/@sveltejs/kit/types/*"],
-      "@pnp/*": ["../../../../src/*"]
+      "@pnp/*": ["../../../../src/*"],
+      "ic-siwe-js": ["./node_modules/ic-siwe-js/dist/index.d.ts"]
     },
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,

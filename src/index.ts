@@ -1,173 +1,466 @@
-import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
-import type { Wallet, Adapter } from "./types";
-import { createPNPConfig, type PNPConfig } from "./config";
+// Polyfill globals for SSR compatibility - must be first import
+import './utils/globals';
+
+import { ActorSubclass } from "@dfinity/agent";
+import { ICRC2_IDL } from "./did/icrc2.idl.js";
+import { Adapter, GlobalPnpConfig } from "./types/index.d";
+import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
+import { WalletAccount } from './types/WalletTypes';
+import { createPNPConfig, CreatePnpArgs } from "./config";
+import { ConnectionManager } from './managers/ConnectionManager';
+import { ActorManager } from './managers/ActorManager';
+import { ConfigManager } from './managers/ConfigManager';
+import { ErrorManager, LogLevel } from './managers/ErrorManager';
+import { StateManager, PnpState, StateResponse, StateTransition } from './managers/StateManager';
+import { globalPerformanceMonitor } from './utils/PerformanceMonitor';
 
 // Re-export config types and creation function for easier consumption
-export { createPNPConfig, type PNPConfig };
-// Re-export core types
-export type { Wallet, Adapter, ActorSubclass };
+export { createPNPConfig, PnpState };
+export type { GlobalPnpConfig, StateResponse, StateTransition };
+export type { ActorSubclass, GetActorOptions};
 
-// Define the PNP class directly here
-export class PNP {
-  account: Wallet.Account | null = null;
-  activeWallet: Adapter.Info | null = null;
-  provider: Adapter.Interface | null = null;
-  config: ReturnType<typeof createPNPConfig>;
-  actorCache: Map<string, ActorSubclass<any>> = new Map();
-  isConnecting: boolean = false;
-  adapters: Record<string, Adapter.Info>;
+/**
+ * Main interface for the PNP (Plug N Play) wallet adapter.
+ * @interface PnpInterface
+ */
+export interface PnpInterface {
+  /** Global configuration object */
+  config: GlobalPnpConfig;
+  /** Currently active adapter configuration */
+  adapter: AdapterConfig | null;
+  /** Wallet provider instance */
+  provider: any;
+  /** Connected wallet account details */
+  account: WalletAccount | null;
+  /** Current connection status */
+  status: any;
+  /** 
+   * Connect to a wallet
+   * @param {string} [walletId] - Optional wallet ID to connect to
+   * @returns {Promise<WalletAccount | null>} Connected account or null
+   */
+  connect: (walletId?: string) => Promise<WalletAccount | null>;
+  /** 
+   * Disconnect from current wallet
+   * @returns {Promise<void>}
+   */
+  disconnect: () => Promise<void>;
+  /** 
+   * Get an actor for interacting with a canister
+   * @template T - Actor interface type
+   * @param {any} options - Actor creation options
+   * @returns {ActorSubclass<T>} Actor instance
+   */
+  getActor: <T>(options: any) => ActorSubclass<T>;
+  /** 
+   * Get an ICRC actor for token operations
+   * @template T - Actor interface type
+   * @param {string} canisterId - Canister ID
+   * @param {Object} [options] - Optional configuration
+   * @returns {ActorSubclass<T>} ICRC actor instance
+   */
+  getIcrcActor: <T>(canisterId: string, options?: { anon?: boolean; requiresSigning?: boolean }) => ActorSubclass<T>;
+  /** 
+   * Check if user is authenticated
+   * @returns {boolean} Authentication status
+   */
+  isAuthenticated: () => boolean;
+  /** 
+   * Get list of enabled wallet adapters
+   * @returns {AdapterConfig[]} Array of enabled adapter configurations
+   */
+  getEnabledWallets: () => AdapterConfig[];
+}
 
-  constructor(config: PNPConfig = {}) {
-    this.config = createPNPConfig(config);
-    this.adapters = this.config.adapters || {};
+/**
+ * Main PNP (Plug N Play) class for managing wallet connections on the Internet Computer.
+ * Supports multiple wallet adapters including Internet Identity, Plug, NFID, and cross-chain wallets
+ * through SIWS (Solana) and SIWE (Ethereum) extensions.
+ * 
+ * @class PNP
+ * 
+ * @example
+ * ```typescript
+ * // Create PNP instance with configuration
+ * const pnp = createPNP({
+ *   network: 'ic',
+ *   adapters: {
+ *     ii: { enabled: true },
+ *     plug: { enabled: true }
+ *   }
+ * });
+ * 
+ * // Connect to a wallet
+ * const account = await pnp.connect('ii');
+ * 
+ * // Get an actor for canister interaction
+ * const actor = pnp.getActor({ canisterId: 'ryjl3-tyaaa-aaaaa-aaaba-cai' });
+ * ```
+ */
+export class PNP implements PnpInterface {
+  private configManager: ConfigManager;
+  private connectionManager: ConnectionManager;
+  private actorManager: ActorManager;
+  private errorManager: ErrorManager;
+  private stateManager: StateManager;
+
+  // Static registry for adapters
+  private static adapterRegistry: Record<string, AdapterConfig> = {};
+
+  /**
+   * Register a new adapter globally. Call before PNP instantiation to make available to all instances.
+   * @param id - Adapter id (unique key)
+   * @param config - Adapter configuration object
+   * @example
+   * ```typescript
+   * PNP.registerAdapter('customWallet', {
+   *   label: 'Custom Wallet',
+   *   enabled: true,
+   *   adapterClass: CustomWalletAdapter
+   * });
+   * ```
+   */
+  static registerAdapter(id: string, config: AdapterConfig) {
+    PNP.adapterRegistry[id] = config;
   }
 
-  private getAdapterConfig(adapterId: string): Adapter.Info {
-    return this.config.adapters?.[adapterId];
+  /**
+   * Unregister an adapter by id.
+   * @param id - Adapter id to remove
+   */
+  static unregisterAdapter(id: string) {
+    delete PNP.adapterRegistry[id];
   }
 
-  private mergeAdapterConfig(adapterId: string): Wallet.PNPConfig {
-    const specificConfig = this.getAdapterConfig(adapterId);
-    return {
-      ...this.config,
-      ...specificConfig,
+  /**
+   * Get all registered adapters.
+   * @returns Object containing all registered adapters
+   */
+  static getRegisteredAdapters(): Record<string, AdapterConfig> {
+    return { ...PNP.adapterRegistry };
+  }
+
+  /**
+   * Creates a new PNP instance.
+   * @param config - Configuration object for PNP
+   */
+  constructor(config: GlobalPnpConfig = {}) {
+    // Merge registered adapters with config.adapters
+    const mergedAdapters = {
+      ...PNP.adapterRegistry,
+      ...(config.adapters || {})
     };
+    const mergedConfig = { ...config, adapters: mergedAdapters };
+    
+    this.errorManager = new ErrorManager(
+      config.logLevel || LogLevel.INFO
+    );
+    this.stateManager = new StateManager(
+      this.errorManager,
+      {
+        key: config.persistenceKey || 'pnp-state',
+        storage: config.storage,
+        maxHistorySize: config.maxStateHistorySize,
+        autoRecover: config.autoRecoverState,
+        validateOnLoad: config.validateStateOnLoad
+      }
+    );
+
+    this.configManager = new ConfigManager(mergedConfig);
+    let finalConfig = this.configManager.getConfig();
+    
+    // Re-merge registered adapters after ConfigManager processing
+    // This ensures registered adapters aren't lost during config processing
+    finalConfig = {
+      ...finalConfig,
+      adapters: {
+        ...finalConfig.adapters,
+        ...PNP.adapterRegistry
+      }
+    };
+    
+    // Update the configManager with the final config including registered adapters
+    this.configManager.updateConfig(finalConfig);
+    
+    this.connectionManager = new ConnectionManager(finalConfig, this.errorManager);
+    this.actorManager = new ActorManager(finalConfig, null);
+
+    // Keep actorManager's provider in sync with connectionManager
+    this.connectionManager.setOnConnected(async () => {
+      try {
+        await this.stateManager.transitionTo(PnpState.CONNECTED);
+        this.actorManager.setProvider(this.connectionManager.provider);
+      } catch (error) {
+        this.errorManager.handleError(error as Error);
+      }
+    });
+
+    this.connectionManager.setOnDisconnected(async () => {
+      try {
+        await this.stateManager.transitionTo(PnpState.DISCONNECTED);
+        this.actorManager.setProvider(null);
+        this.actorManager.clearCache();
+      } catch (error) {
+        this.errorManager.handleError(error as Error);
+      }
+    });
+
+    // Initialize state
+    this.stateManager.transitionTo(PnpState.INITIALIZED).catch(error => {
+      this.errorManager.handleError(error);
+    });
   }
 
-  async connect(walletId?: string): Promise<Wallet.Account | null> {
-    if (this.isConnecting) return null;
-    this.isConnecting = true;
-    let instance: Adapter.Interface | null = null;
+  /**
+   * Opens authentication channel for Safari compatibility.
+   * Must be called before connect() in Safari to prevent popup blocking.
+   * @returns Promise that resolves when channel is opened
+   * @example
+   * ```typescript
+   * // Safari requires channel opening before user action completes
+   * button.onclick = async () => {
+   *   await pnp.openChannel(); // Initialize AuthClient early
+   *   await pnp.connect('ii'); // Popup opens without blocking
+   * };
+   * ```
+   */
+  async openChannel(): Promise<void> {
+      await this.connectionManager.openChannel();
+  }
 
+  /**
+   * Get the current configuration object.
+   * @returns {GlobalPnpConfig} Current configuration
+   */
+  get config() {
+    return this.configManager.getConfig();
+  }
+
+  /**
+   * Get the currently active adapter.
+   * @returns {AdapterConfig | null} Active adapter or null if not connected
+   */
+  get adapter() {
+    return this.connectionManager.adapter;
+  }
+
+  /**
+   * Get the current wallet provider instance.
+   * @returns {any} Provider instance or null
+   */
+  get provider() {
+    return this.connectionManager.provider;
+  }
+
+  /**
+   * Get the connected wallet account details.
+   * @returns {WalletAccount | null} Account details or null if not connected
+   */
+  get account() {
+    return this.connectionManager.account;
+  }
+
+  /**
+   * Get the current connection status.
+   * @returns {any} Connection status
+   */
+  get status() {
+    return this.connectionManager.status;
+  }
+
+  /**
+   * Connect to a wallet adapter.
+   * @param walletId - Optional wallet adapter ID to connect to
+   * @returns Connected account or null
+   * @throws If connection fails
+   * @example
+   * ```typescript
+   * // Connect to Internet Identity
+   * const account = await pnp.connect('ii');
+   * console.log('Connected:', account.principal);
+   * ```
+   */
+  async connect(walletId?: string) {
+    const timingKey = globalPerformanceMonitor.startTiming('connection', walletId);
     try {
-      const targetWalletId =
-        walletId || localStorage.getItem(this.config.localStorageKey);
-      if (!targetWalletId) return null;
-
-      localStorage.setItem(this.config.localStorageKey, targetWalletId);
-
-      const adapterInfo = this.adapters[targetWalletId];
-      if (!adapterInfo)
-        throw new Error(
-          `Wallet ${targetWalletId} not found in provided adapters`
-        );
-
-      const adapterConfig = this.mergeAdapterConfig(targetWalletId);
-
-      instance = new adapterInfo.adapter(adapterConfig);
-      const account = await instance.connect(adapterConfig);
-
-      this.account = account;
-      this.activeWallet = adapterInfo;
-      this.provider = instance;
+      if (this.stateManager.getCurrentState() === PnpState.CONNECTED) {
+        // Already connected, return current account or handle as appropriate
+        this.errorManager.info("Already connected.");
+        globalPerformanceMonitor.endTiming(timingKey, true);
+        return this.account;
+      }
+      await this.stateManager.transitionTo(PnpState.CONNECTING);
+      
+      
+      const account = await this.connectionManager.connect(walletId);
+      this.actorManager.setProvider(this.connectionManager.provider);
+      globalPerformanceMonitor.endTiming(timingKey, true);
       return account;
     } catch (error) {
-      console.warn(
-        `[PNP] Connection failed for ${walletId || "stored wallet"}:`,
-        error
-      );
-      if (instance) {
-        try {
-          await instance.disconnect();
-        } catch (disconnectError) {
-          console.warn("[PNP] Disconnect error:", disconnectError);
-        }
-      }
-      this.account = null;
-      this.provider = null;
-      this.activeWallet = null;
-      localStorage.removeItem(this.config.localStorageKey);
-      return null;
-    } finally {
-      this.isConnecting = false;
+      await this.stateManager.transitionTo(PnpState.ERROR, { error });
+      this.errorManager.handleError(error as Error);
+      globalPerformanceMonitor.endTiming(timingKey, false, String(error));
+      throw error;
     }
   }
 
-  getAdapter(walletId: string): Adapter.Interface {
-    const wallet = this.adapters[walletId];
-    if (!wallet)
-      throw new Error(`Wallet ${walletId} not found in provided adapters`);
-    const adapterConfig = this.mergeAdapterConfig(walletId);
-    return new wallet.adapter(adapterConfig);
-  }
-
-  async disconnect(): Promise<void> {
-    this.isConnecting = false;
+  /**
+   * Disconnect from the current wallet.
+   * @returns Promise that resolves when disconnected
+   * @throws If disconnection fails
+   */
+  async disconnect() {
     try {
-      if (this.provider) await this.provider.disconnect();
-      this.account = null;
-      this.provider = null;
-      this.activeWallet = null;
-      this.actorCache.clear();
-      localStorage.removeItem(this.config.localStorageKey);
+      await this.stateManager.transitionTo(PnpState.DISCONNECTING);
+      await this.connectionManager.disconnect();
+      this.actorManager.setProvider(null);
+      this.actorManager.clearCache();
     } catch (error) {
-      console.warn("[PNP] Disconnect error:", error);
-      this.account = null;
-      this.provider = null;
-      this.activeWallet = null;
-      this.actorCache.clear();
-      localStorage.removeItem(this.config.localStorageKey);
-    } finally {
-      this.isConnecting = false;
+      await this.stateManager.transitionTo(PnpState.ERROR, { error });
+      this.errorManager.handleError(error as Error);
+      throw error;
     }
   }
 
-  getActor<T>(
-    canisterId: string,
-    idl: any,
-    options?: {
-      anon?: boolean;
-      requiresSigning?: boolean;
-    }
-  ): ActorSubclass<T> {
-    const { anon = false, requiresSigning = true } = options || {};
+  /**
+   * Get an actor for interacting with a canister.
+   * @template T - Actor interface type
+   * @param {GetActorOptions} options - Actor creation options
+   * @returns {ActorSubclass<T>} Actor instance
+   * @example
+   * ```typescript
+   * const actor = pnp.getActor<MyCanisterInterface>({
+   *   canisterId: 'ryjl3-tyaaa-aaaaa-aaaba-cai',
+   *   idl: MyCanisterIDL
+   * });
+   * ```
+   */
+  getActor<T>(options: GetActorOptions): ActorSubclass<T> {
+    return this.actorManager.getActor<T>(options);
+  }
 
+  /**
+   * Get an ICRC actor for token operations.
+   * @template T - Actor interface type
+   * @param {string} canisterId - Canister ID of the ICRC token
+   * @param {Object} [options] - Optional configuration
+   * @param {boolean} [options.anon=false] - Use anonymous actor
+   * @param {boolean} [options.requiresSigning=false] - Require signing capability
+   * @returns {ActorSubclass<T>} ICRC actor instance
+   * @example
+   * ```typescript
+   * const tokenActor = pnp.getIcrcActor('ryjl3-tyaaa-aaaaa-aaaba-cai');
+   * const balance = await tokenActor.icrc1_balance_of({ owner: principal, subaccount: [] });
+   * ```
+   */
+  getIcrcActor<T>(canisterId: string, options?: { anon?: boolean; requiresSigning?: boolean }): ActorSubclass<T> {
+    const anon = options?.anon ?? false;
+    const requiresSigning = options?.requiresSigning ?? false;
     if (anon) {
-      return this.createAnonymousActor<T>(canisterId, idl);
+      return this.actorManager.createAnonymousActor<T>(canisterId, ICRC2_IDL);
     }
-
-    if (!this.provider) {
-      throw new Error(
-        "Cannot create signed actor. No wallet provider connected."
-      );
+    if (this.connectionManager.provider && (this.connectionManager.provider as any).icrcActor) {
+      return (this.connectionManager.provider as any).icrcActor({ canisterId, anon: false, requiresSigning }) as ActorSubclass<T>;
     }
-
-    return this.provider.createActor<T>(canisterId, idl, { requiresSigning });
+    return this.actorManager.getActor<T>({ canisterId, idl: ICRC2_IDL, anon: false, requiresSigning });
   }
 
-  createAnonymousActor<T>(canisterId: string, idl: any): ActorSubclass<T> {
-    const cacheKey = `anon-${canisterId}`;
-    const cachedActor = this.actorCache.get(cacheKey);
-    if (cachedActor) return cachedActor;
-
-    const actor = Actor.createActor<T>(idl, {
-      agent: HttpAgent.createSync({
-        host: this.config.hostUrl,
-        verifyQuerySignatures: this.config.verifyQuerySignatures,
-      }),
-      canisterId,
-    });
-
-    this.actorCache.set(cacheKey, actor);
-    return actor;
+  /**
+   * Check if user is authenticated with a wallet.
+   * @returns {boolean} True if authenticated, false otherwise
+   */
+  isAuthenticated(): boolean {
+    return this.connectionManager.isAuthenticated();
   }
 
-  isWalletConnected(): boolean {
-    return (
-      this.activeWallet !== null &&
-      this.provider !== null &&
-      this.account !== null
-    );
+  /**
+   * Get list of enabled wallet adapters.
+   * @returns {AdapterConfig[]} Array of enabled adapter configurations
+   * @example
+   * ```typescript
+   * const wallets = pnp.getEnabledWallets();
+   * wallets.forEach(wallet => {
+   *   console.log(`${wallet.label}: ${wallet.id}`);
+   * });
+   * ```
+   */
+  getEnabledWallets(): AdapterConfig[] {
+    return Object.entries(this.config.adapters)
+      .filter(([_, wallet]) => wallet?.enabled !== false)
+      .map(([id, wallet]) => ({
+        ...wallet,
+        id: wallet.id || id // Ensure id is always present
+      })) as AdapterConfig[];
   }
 
-  getEnabledWallets(): Adapter.Info[] {
-    return Object.values(this.adapters).filter((wallet) => {
-      const adapterConfig = this.config.adapters[wallet.id];
-      // Enabled if explicitly true or not defined (defaults to true implicitly)
-      return adapterConfig?.enabled !== false;
-    });
+  /**
+   * Get performance metrics and cache statistics.
+   * @returns {Object} Performance statistics including cache stats, metrics, and timings
+   * @returns {Object} returns.cache - Actor cache statistics
+   * @returns {Object} returns.performance - Performance metrics
+   * @returns {Object} returns.timings - Timing report
+   */
+  getPerformanceStats() {
+    return {
+      cache: this.actorManager.getCacheStats(),
+      performance: globalPerformanceMonitor.getMetrics(),
+      timings: globalPerformanceMonitor.getTimingReport(),
+    };
   }
 }
 
-// Export the factory function and wallet list
-export const createPNP = (config: PNPConfig = {}) => new PNP(config);
+/**
+ * Factory function to create a new PNP instance with configuration.
+ * @param {CreatePnpArgs} [config={}] - Configuration object or ConfigBuilder
+ * @returns {PNP} New PNP instance
+ * @example
+ * ```typescript
+ * // Using object configuration
+ * const pnp = createPNP({
+ *   network: 'ic',
+ *   adapters: {
+ *     ii: { enabled: true },
+ *     plug: { enabled: true }
+ *   }
+ * });
+ * 
+ * // Using ConfigBuilder
+ * const pnp2 = createPNP(
+ *   ConfigBuilder.create()
+ *     .withEnvironment('local')
+ *     .withAdapter('ii', { enabled: true })
+ *     .build()
+ * );
+ * ```
+ */
+export const createPNP = (config: CreatePnpArgs = {}) => {
+  const globalConfig = createPNPConfig(config);
+  return new PNP(globalConfig);
+};
+
+// Export configuration types and builder
+export { ConfigBuilder } from "./config";
+export type { CreatePnpArgs };
+
+// Export adapter extension types
+export { 
+  createAdapterExtension,
+  type AdapterExtension,
+  type ExtractAdapterIds
+} from "./types/AdapterExtensions";
+
+// Export base adapter classes for external packages
+export { BaseAdapter } from './adapters/BaseAdapter';
+export type { AdapterConstructorArgs } from './adapters/BaseAdapter';
+export { BaseDelegationAdapter } from './adapters/BaseDelegationAdapter';
+export { BaseSignerAdapter } from './adapters/BaseSignerAdapter';
+export { BaseMultiChainAdapter } from './adapters/BaseMultiChainAdapter';
+export type { NetworkDetection, MultiChainConfig } from './adapters/BaseMultiChainAdapter';
+
+// Export SIWS/SIWE related adapters for cross-chain packages
+export { BaseSiwxAdapter } from './adapters/BaseSiwxAdapter';
+export { Adapter } from './types/index.d';
+export type { Wallet } from './types/index.d';
+
+// Export utilities needed by packages
+export { deriveAccountId, formatSiwsMessage } from './utils';

@@ -1,72 +1,256 @@
-import { Adapter } from './types';
-import { ICAdapters } from './adapters/ic'; // Removed defaultICAdapterConfigs import
+import { Adapter } from "./types";
+import { Adapters } from "./adapters";
+import { GlobalPnpConfig } from ".";
+import { AdapterExtension, mergeAdapterExtensions } from "./types/AdapterExtensions";
 
-// Main configuration for the PNP library
-export interface PNPConfig {
-  dfxNetwork?: string; // Useful for determining dev environment
-  hostUrl?: string;
-  delegationTimeout?: bigint;
-  delegationTargets?: string[];
-  derivationOrigin?: string;
-  fetchRootKeys?: boolean; // Common agent setting
-  verifyQuerySignatures?: boolean; // Common agent setting
-  localStorageKey?: string;
-  adapters?: Record<string, Partial<Adapter.Info>>; // Use Partial as user might only override some fields
+// Clean configuration input
+export interface CreatePnpArgs {
+  network?: 'local' | 'ic';
+  ports?: { replica?: number; frontend?: number };
+  delegation?: { timeout?: bigint; targets?: string[] };
+  security?: { fetchRootKey?: boolean; verifyQuerySignatures?: boolean };
+  storage?: { key?: string };
+  providers?: {
+    siws?: string;
+    siwe?: string; 
+    frontend?: string;
+  };
+  extensions?: AdapterExtension<any>[]; // New: declarative adapter extensions
+  adapters?: Record<string, AdapterOverride>;
 }
 
-// Default values for the main configuration
-// Update the type to reflect that 'adapters' now holds config and removed adapterConfigs
-export const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters'>> & {
-  adapters: Record<string, Adapter.Info> // 'adapters' now holds the complete, configured adapter info
-} = {
-  // Global defaults
-  hostUrl: "https://icp0.io",
-  delegationTimeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
-  delegationTargets: [],
-  derivationOrigin: typeof window !== 'undefined' ? window.location.origin : "", // Default to browser origin
-  dfxNetwork: "ic",
-  fetchRootKeys: false,
-  verifyQuerySignatures: true,
-  localStorageKey: "pnpConnectedWallet",
-  adapters: {
-    ...ICAdapters,
-  },
+// Adapter override with flat structure
+type AdapterOverride = {
+  enabled?: boolean;
+  [key: string]: any;
 };
 
-// Define the return type more explicitly to include adapters (which now contain config)
-export type FullPNPConfig = typeof defaultPNPConfig;
+// Defaults
+const DEFAULTS = {
+  network: 'ic' as const,
+  ports: { replica: 8080, frontend: 3000 },
+  delegation: {
+    timeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000),
+    targets: [] as string[]
+  },
+  storage: { key: 'pnpState' }
+};
 
-// Function to create a complete configuration object by merging user input with defaults
-export function createPNPConfig(config: PNPConfig = {}): FullPNPConfig { 
-  // Merge the main adapters map (user overrides defaults including config)
-  const mergedAdapters = { ...defaultPNPConfig.adapters };
-  if (config.adapters) {
-    for (const adapterId in config.adapters) {
-        const defaultAdapterInfo = defaultPNPConfig.adapters[adapterId] || {}; // Default adapter info (includes config)
-        mergedAdapters[adapterId] = {
-          ...defaultAdapterInfo,
-          ...(config.adapters[adapterId]), // User overrides for this adapter (can include config)
-        } as Adapter.Info; // Assert type here to satisfy the linter
-    }
-  }
-
-  // Determine isDev based on dfxNetwork if not explicitly provided
-  const hostUrl = config.hostUrl ?? "https://icp0.io";
-  const derivationOrigin = config.derivationOrigin ?? "http://localhost:5173";
-
-  // Merge global settings and include the merged adapters map
-  const mergedConfig: FullPNPConfig = {
-    ...defaultPNPConfig,
-    ...config, // User's global settings override defaults
-    hostUrl,
-    derivationOrigin,
-    adapters: mergedAdapters, // Use the merged adapters map (now includes config)
-  };
+// Clean configuration factory  
+export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
+  const network = input.network || DEFAULTS.network;
+  const isLocal = network === 'local';
+  const ports = { ...DEFAULTS.ports, ...input.ports };
+  const delegation = { ...DEFAULTS.delegation, ...input.delegation };
+  const storage = { ...DEFAULTS.storage, ...input.storage };
+  const providers = input.providers || {};
   
-  // Adjust default II identity provider based on isDev, now checking mergedAdapters
-  if (mergedAdapters.ii) {
-      mergedAdapters.ii.config.identityProvider =  mergedAdapters.ii.config.identityProvider ?? "https://identity.ic0.app";
+  // Computed values
+  const hostUrl = isLocal 
+    ? `http://127.0.0.1:${ports.replica}`
+    : 'https://icp0.io';
+    
+  const derivationOrigin = providers.frontend && !isLocal
+    ? `https://${providers.frontend}.icp0.io`
+    : `http://localhost:${ports.frontend}`;
+
+  // Merge extensions if provided
+  const extensionAdapters = input.extensions 
+    ? mergeAdapterExtensions(...input.extensions)
+    : {};
+  
+  // Process adapters with concise merging
+  const adapters: Record<string, Adapter.Config> = {};
+  const adapterIds = new Set([
+    ...Object.keys(Adapters),
+    ...Object.keys(extensionAdapters),
+    ...Object.keys(input.adapters || {})
+  ]);
+  
+  console.log('[createPNPConfig] Processing adapters:', {
+    builtInAdapters: Object.keys(Adapters),
+    extensionAdapters: Object.keys(extensionAdapters),
+    inputAdapters: Object.keys(input.adapters || {}),
+    allAdapterIds: Array.from(adapterIds)
+  });
+  
+  for (const id of adapterIds) {
+    // Check in order: built-in, extensions, overrides
+    const base = Adapters[id] || extensionAdapters[id];
+    const override = input.adapters?.[id];
+    
+    console.log(`[createPNPConfig] Processing adapter ${id}:`, {
+      hasBase: !!base,
+      hasOverride: !!override,
+      baseEnabled: base?.enabled,
+      overrideEnabled: override?.enabled
+    });
+    
+    // Custom adapter without base
+    if (!base && override?.adapter) {
+      adapters[id] = override as any;
+      continue;
+    }
+    
+    if (!base) continue;
+    
+    // Merge configuration efficiently
+    adapters[id] = {
+      ...base,
+      enabled: override?.enabled ?? base.enabled,
+      config: {
+        ...base.config,
+        // Global settings
+        hostUrl,
+        derivationOrigin,
+        fetchRootKey: input.security?.fetchRootKey ?? isLocal,
+        verifyQuerySignatures: input.security?.verifyQuerySignatures ?? !isLocal,
+        delegationTimeout: delegation.timeout,
+        delegationTargets: delegation.targets,
+        localStorageKey: storage.key,
+        // Provider IDs
+        siwsProviderCanisterId: providers.siws,
+        siweProviderCanisterId: providers.siwe,
+        frontendCanisterId: providers.frontend,
+        // Adapter-specific overrides (excluding 'enabled' and 'config')
+        ...Object.fromEntries(
+          Object.entries(override || {})
+            .filter(([k]) => k !== 'enabled' && k !== 'config')
+        ),
+        // Merge user's config overrides last to allow per-adapter customization
+        ...(override?.config || {})
+      }
+    };
   }
 
-  return mergedConfig;
+  // Return clean global config
+  return {
+    dfxNetwork: network,
+    replicaPort: ports.replica,
+    hostUrl,
+    delegationTimeout: delegation.timeout,
+    delegationTargets: delegation.targets,
+    derivationOrigin,
+    fetchRootKey: input.security?.fetchRootKey ?? isLocal,
+    verifyQuerySignatures: input.security?.verifyQuerySignatures ?? !isLocal,
+    localStorageKey: storage.key,
+    siwsProviderCanisterId: providers.siws,
+    siweProviderCanisterId: providers.siwe,
+    adapters
+  };
+}
+
+// Builder pattern for cleaner configuration
+export class ConfigBuilder {
+  private config: CreatePnpArgs = {};
+  
+  static create(): ConfigBuilder {
+    return new ConfigBuilder();
+  }
+  
+  withEnvironment(network: 'local' | 'ic', ports?: { replica?: number; frontend?: number }): this {
+    this.config.network = network;
+    if (ports) this.config.ports = ports;
+    return this;
+  }
+  
+  // Named-args friendly API with backward compatibility for positional args
+  withDelegation(
+    optionsOrTimeout?: { timeout?: bigint; targets?: string[] } | bigint,
+    maybeTargets?: string[]
+  ): this {
+    if (typeof optionsOrTimeout === 'object' && optionsOrTimeout !== null) {
+      const { timeout, targets } = optionsOrTimeout;
+      this.config.delegation = { timeout, targets };
+      return this;
+    }
+    // Back-compat: (timeout?, targets?)
+    const timeout = optionsOrTimeout as bigint | undefined;
+    const targets = maybeTargets;
+    this.config.delegation = { timeout, targets };
+    return this;
+  }
+  
+  withSecurity(fetchRootKey?: boolean, verifyQuerySignatures?: boolean): this {
+    this.config.security = { fetchRootKey, verifyQuerySignatures };
+    return this;
+  }
+  
+  withProviders(providers: CreatePnpArgs['providers']): this {
+    this.config.providers = providers;
+    return this;
+  }
+  
+  withExtensions(...extensions: AdapterExtension<any>[]): this {
+    this.config.extensions = extensions;
+    return this;
+  }
+  
+  withAdapter(id: string, override: AdapterOverride): this {
+    if (!this.config.adapters) this.config.adapters = {};
+    this.config.adapters[id] = override;
+    return this;
+  }
+  
+  /**
+   * Quick builder to enable Internet Computer adapters with optional overrides.
+   *
+   * Usage examples:
+   * - withIcAdapters() // enables ii, plug, oisy, nfid, stoic
+   * - withIcAdapters({ plug: { enabled: true, whitelist: ['canister1'] } })
+   * - withIcAdapters({ ii: false }) // disables ii while enabling the rest
+   */
+  withIcAdapters(
+    overrides?: Partial<Record<'ii' | 'plug' | 'oisy' | 'nfid' | 'stoic', AdapterOverride | boolean>> & {
+      exclude?: Array<'ii' | 'plug' | 'oisy' | 'nfid' | 'stoic'>;
+    }
+  ): this {
+    console.log('[ConfigBuilder] withIcAdapters called');
+    const icIds = ['ii', 'plug', 'oisy', 'nfid', 'stoic'] as const;
+    const excluded = new Set(overrides && 'exclude' in overrides ? (overrides.exclude || []) : []);
+    if (!this.config.adapters) this.config.adapters = {};
+    
+    // No overrides provided: enable all IC adapters by default
+    if (!overrides) {
+      console.log('[ConfigBuilder] Enabling all IC adapters');
+      for (const id of icIds) {
+        if (Adapters[id] && !excluded.has(id)) {
+          console.log(`[ConfigBuilder] Enabling adapter: ${id}`);
+          this.config.adapters[id] = { enabled: true };
+        }
+      }
+      return this;
+    }
+    
+    // Apply per-adapter overrides, defaulting unspecified to enabled: true
+    for (const id of icIds) {
+      if (!Adapters[id]) continue;
+      if (excluded.has(id)) {
+        this.config.adapters[id] = { ...(this.config.adapters[id] || {}), enabled: false };
+        continue;
+      }
+      const override = overrides[id];
+      
+      if (override === undefined) {
+        if (!this.config.adapters[id]) this.config.adapters[id] = { enabled: true };
+        continue;
+      }
+      
+      if (typeof override === 'boolean') {
+        this.config.adapters[id] = { ...(this.config.adapters[id] || {}), enabled: override };
+      } else {
+        this.config.adapters[id] = {
+          ...(this.config.adapters[id] || {}),
+          ...override,
+          enabled: override.enabled ?? true
+        } as any;
+      }
+    }
+    
+    return this;
+  }
+  
+  build(): GlobalPnpConfig {
+    return createPNPConfig(this.config);
+  }
 }

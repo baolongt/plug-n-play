@@ -1,175 +1,190 @@
 # Plug N Play for the Internet Computer
 
-Plug N Play simplifies the integration of Internet Computer wallets into your decentralized applications (dApps). It provides a standardized interface for connecting to various wallets, managing transactions, and interacting with the Internet Computer blockchain.
+Unified wallet adapter for Internet Computer dApps with support for IC, Solana (SIWS), and Ethereum (SIWE) wallets.
 
 ## Features
 
-- Seamless integration with multiple Internet Computer wallets
-- Simplified wallet connection, disconnection, and other functions
-- Supports ICRC wallet standards
-- Lightweight and easy to use
-
-## Supported Wallets
-
-- Internet Identity
-- NFID
-- Plug
-- Oisy
-- More to be added
+- 🔌 **Multiple Wallets** - Internet Identity, NFID, Plug, Oisy, MetaMask, Phantom, Solflare, WalletConnect, OKX, Coinbase
+- 📦 **Modular** - Install only what you need with separate wallet packages
+- 🚀 **Simple API** - Connect, disconnect, and interact with canisters easily
+- 🔐 **Multi-Chain** - Support for IC, Solana (SIWS), and Ethereum (SIWE)
+- ⚡ **Lightweight** - Minimal dependencies, optimized bundles
+- 🔄 **Session Management** - Reliable session persistence across all wallets
 
 ## Installation
 
-Install Plug N Play using npm:
-
 ```bash
-npm install @windoge98/plug-n-play
+# Core (IC wallets)
+npm install @windoge98/plug-n-play@beta
+
+# Individual wallet packages
+npm install @windoge98/pnp-metamask@beta    # Ethereum - MetaMask
+npm install @windoge98/pnp-phantom@beta     # Solana - Phantom
+npm install @windoge98/pnp-solflare@beta    # Solana - Solflare
+npm install @windoge98/pnp-walletconnect@beta # Solana - WalletConnect
+npm install @windoge98/pnp-okx@beta         # Solana - OKX
+npm install @windoge98/pnp-coinbase@beta    # Solana - Coinbase Wallet
 ```
 
-## Basic Usage
-
-Here's a minimal example of how to use Plug N Play:
+## Quick Start
 
 ```typescript
 import { createPNP } from "@windoge98/plug-n-play";
 
-// Initialize PNP with global and adapter-specific settings
+// Create PNP instance
 const pnp = createPNP({
-  // Global settings
-  hostUrl: "http://localhost:4943", // Defaults to https://icp0.io, set to your local replica for local dev
-  fetchRootKeys: false, // Default is false, set true for local dev
-  verifyQuerySignatures: false, // Default is true, set false for local dev
-  derivationOrigin: "http://localhost:5173", // Optional: Set for local dev
-  dfxNetwork: "local", // Optional: Set for local dev
-
-  // Adapter-specific configurations are nested within the 'adapters' object
+  network: 'ic', // or 'local' for development
   adapters: {
-    oisy: {
-      // Settings specific to Oisy
-      enabled: true,
-      config: {
-        // Oisy specific config options, e.g.
-        // signerUrl: "https://oisy.com/sign",
-      },
-    },
-    nfid: {
-      // Settings specific to NFID
-      enabled: true,
-      config: {
-        // rpcUrl: "https://nfid.one/rpc",
-      },
-    },
-    ii: {
-      // Settings specific to Internet Identity
-      enabled: true, // Explicitly enable (default is true)
-      config: {
-        // Configuration specific to the II adapter
-        identityProvider: "https://identity.ic0.app", // Optional: Default is derived
-      },
-    },
-    plug: {
-      // Settings specific to Plug
-      enabled: true,
-      config: {
-        // Plug-specific config, often less needed as it uses browser extension
-      },
-    },
-  },
+    ii: { enabled: true },
+    plug: { enabled: true }
+  }
 });
 
-// Get the list of enabled wallets AFTER initialization
-const availableWallets = pnp.getEnabledWallets();
-console.log("Available wallets:", availableWallets);
-// Returns an array of Adapter.Info objects for enabled wallets
+// Connect wallet
+const account = await pnp.connect('ii');
 
-// Connect to a wallet
-async function connectWallet(walletId: string) {
-  try {
-    const account = await pnp.connect(walletId);
-    console.log("Connected account:", account);
-    return account;
-  } catch (error) {
-    console.error("Failed to connect wallet:", error);
-    throw error;
-  }
-}
-
-// Interact with a canister
-async function interactWithCanister(canisterId: string, idl: any) {
-  try {
-    const actor = pnp.getActor(canisterId, idl);
-    // Now you can call methods on your actor
-    return actor;
-  } catch (error) {
-    console.error("Failed to get canister actor:", error);
-    throw error;
-  }
-}
-
-// Disconnect wallet
-async function disconnectWallet() {
-  try {
-    await pnp.disconnect();
-    console.log("Wallet disconnected");
-  } catch (error) {
-    console.error("Failed to disconnect wallet:", error);
-    throw error;
-  }
-}
+// Use with canister
+const actor = pnp.getActor(canisterId, idl);
+await actor.someMethod();
 ```
 
-## Working with the ICP Ledger
+## Configuration
 
-Example of interacting with the ICP ledger:
+### Complete Example
 
 ```typescript
-import { Principal } from "@dfinity/principal";
-import { ICRC2_IDL } from "./idls/icrc2.idl";
+import { createPNP, ConfigBuilder } from "@windoge98/plug-n-play";
+import { MetaMaskExtension } from "@windoge98/pnp-metamask";
+import { PhantomExtension } from "@windoge98/pnp-phantom";
 
-const LEDGER_CANISTER_ID = "ryjl3-tyaaa-aaaaa-aaaba-cai";
-
-// Get account balance
-async function getBalance(principal: string) {
-  const actor = pnp.getActor(LEDGER_CANISTER_ID, ICRC2_IDL);
-  const balance = await actor.icrc1_balance_of({
-    owner: Principal.fromText(principal),
-    subaccount: [],
-  });
-  return balance;
-}
-
-// Transfer ICP
-async function transfer(to: string, amount: bigint) {
-  const actor = pnp.getActor(LEDGER_CANISTER_ID, ICRC2_IDL);
-  const result = await actor.icrc1_transfer({
-    to: {
-      owner: Principal.fromText(to),
-      subaccount: [],
+// Option 1: Object configuration with extensions
+const pnp = createPNP({
+  network: 'ic',
+  ports: { replica: 8080, frontend: 3000 },
+  security: { fetchRootKey: false, verifyQuerySignatures: true },
+  delegation: { 
+    timeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000),
+    targets: ['canister1', 'canister2']
+  },
+  providers: {
+    siws: 'SIWS_CANISTER_ID',
+    siwe: 'SIWE_CANISTER_ID', 
+    frontend: 'FRONTEND_CANISTER_ID'
+  },
+  extensions: [MetaMaskExtension, PhantomExtension], // Modular wallet support
+  adapters: {
+    ii: { enabled: true },
+    plug: { enabled: true },
+    metamask: { 
+      enabled: true,
+      siweProviderCanisterId: 'YOUR_SIWE_CANISTER_ID'
     },
-    amount,
-    fee: [],
-    memo: [],
-    from_subaccount: [],
-    created_at_time: [],
-  });
-  return result;
-}
+    phantom: { 
+      enabled: true,
+      siwsProviderCanisterId: 'YOUR_SIWS_CANISTER_ID'
+    }
+  }
+});
+
+// Option 2: Builder pattern
+const pnp2 = createPNP(
+  ConfigBuilder.create()
+    .withEnvironment('local', { replica: 8080 })
+    .withSecurity(true, false)
+    .withAdapter('ii', { enabled: true })
+    .build()
+);
+
 ```
 
-## Best Practices
+### Configuration Options
 
-1. Always initialize PNP before attempting to connect to a wallet
-2. Use try-catch blocks when calling PNP methods
-3. Set appropriate delegation timeouts based on your security requirements
-4. Implement proper error handling for all wallet operations
-5. Clean up resources by calling disconnect when appropriate
-6. For local development, make sure to use the correct `hostUrl`
+| Group | Description | Default |
+|-------|-------------|---------|
+| `network` | 'local' or 'ic' | 'ic' |
+| `ports` | `{ replica, frontend }` | `{ 8080, 3000 }` |
+| `security` | `{ fetchRootKey, verifyQuerySignatures }` | Auto-configured |
+| `delegation` | `{ timeout, targets }` | 1 day, [] |
+| `providers` | `{ siws, siwe, frontend }` | undefined |
+| `adapters` | Wallet configurations | All enabled |
 
-## License
+## Adapter Extensions
 
-This project is licensed under the [MIT License](https://github.com/microdao-corporation/plug-n-play/blob/main/LICENSE.txt).
+### Declarative Adapter Registration
 
-## Support
+Instead of manual registration loops, use adapter extensions:
 
-If you encounter any issues or have questions, please file an issue on our [GitHub issue tracker](https://github.com/microdao-corporation/plug-n-play/issues).
+```typescript
+import { createPNP } from '@windoge98/plug-n-play';
+import { MetaMaskExtension } from '@windoge98/pnp-metamask';
+import { PhantomExtension } from '@windoge98/pnp-phantom';
+import { WalletConnectExtension } from '@windoge98/pnp-walletconnect';
 
----
+// Declarative configuration with extensions
+const pnp = createPNP({
+  extensions: [MetaMaskExtension, PhantomExtension, WalletConnectExtension],
+  providers: { 
+    siws: 'YOUR_SIWS_CANISTER_ID',
+    siwe: 'YOUR_SIWE_CANISTER_ID'
+  },
+  adapters: {
+    metamask: { enabled: true },
+    phantom: { enabled: true },
+    walletconnect: { 
+      enabled: true,
+      projectId: 'YOUR_PROJECT_ID'
+    }
+  }
+});
+
+// Or with builder pattern
+const pnp2 = ConfigBuilder.create()
+  .withExtensions(MetaMaskExtension, PhantomExtension)
+  .withProviders({ 
+    siws: 'YOUR_SIWS_CANISTER_ID',
+    siwe: 'YOUR_SIWE_CANISTER_ID'
+  })
+  .withAdapter('metamask', { enabled: true })
+  .build();
+```
+
+### Creating Custom Extensions
+
+```typescript
+import { createAdapterExtension } from '@windoge98/plug-n-play';
+
+export const MyCustomExtension = createAdapterExtension({
+  myWallet: {
+    id: 'myWallet',
+    walletName: 'My Custom Wallet',
+    chain: 'ICP',
+    adapter: MyWalletAdapter,
+    config: { /* adapter specific config */ }
+  }
+});
+```
+
+## API Reference
+
+### Core Methods
+
+```typescript
+// Connection
+await pnp.connect(walletId: string): Promise<Account>
+await pnp.disconnect(): Promise<void>
+pnp.isAuthenticated(): boolean
+
+// Actor creation
+pnp.getActor(canisterId: string, idl: IDL): ActorSubclass
+pnp.getActor(canisterId, idl, { anon: true }) // Anonymous actor
+
+// Wallet info
+pnp.getEnabledWallets(): AdapterConfig[]
+pnp.getAccount(): Account | null
+```
+
+## Resources
+
+- [Documentation](https://github.com/microdao-corporation/plug-n-play)
+- [Issues](https://github.com/microdao-corporation/plug-n-play/issues)
+- [License](https://github.com/microdao-corporation/plug-n-play/blob/main/LICENSE.txt)
