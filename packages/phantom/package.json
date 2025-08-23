@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-phantom",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.10",
   "description": "Phantom wallet adapter for Plug-n-Play",
   "main": "./dist/index.js",
   "module": "./dist/index.es.js",
@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@windoge98/plug-n-play": "0.1.0-beta.8",
+    "@windoge98/plug-n-play": "0.1.0-beta.10",
     "@solana/wallet-adapter-phantom": "^0.9.24"
   },
   "peerDependencies": {

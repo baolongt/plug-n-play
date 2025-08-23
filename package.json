@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/plug-n-play",
-  "version": "0.1.0-beta.9",
+  "version": "0.1.0-beta.10",
   "description": "Wallet wrapper/adapter for easy authentication on the Internet Computer",
   "module": "dist/plug-n-play.es.js",
   "main": "dist/index.js",
@@ -88,6 +88,7 @@
     "@slide-computer/signer-agent": "3.16.0",
     "@slide-computer/signer-extension": "^3.16.0",
     "@slide-computer/signer-storage": "3.16.0",
+    "@slide-computer/signer-transport-auth-client": "^3.16.0",
     "@slide-computer/signer-transport-stoic": "^3.16.0",
     "@slide-computer/signer-web": "^3.16.0"
   },

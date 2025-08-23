@@ -290,6 +290,8 @@ export class PNP implements PnpInterface {
         return this.account;
       }
       await this.stateManager.transitionTo(PnpState.CONNECTING);
+      
+      
       const account = await this.connectionManager.connect(walletId);
       this.actorManager.setProvider(this.connectionManager.provider);
       globalPerformanceMonitor.endTiming(timingKey, true);

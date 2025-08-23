@@ -10,12 +10,6 @@ echo "📦 Linking main package..."
 echo "   @windoge98/plug-n-play"
 npm link
 
-# Link blockchain-specific packages
-echo ""
-echo "🌐 Linking blockchain packages..."
-echo "   @windoge98/pnp-ethereum"
-cd packages/ethereum && npm link && cd ../..
-
 # Link individual wallet packages
 echo ""
 echo "💼 Linking wallet packages..."

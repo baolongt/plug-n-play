@@ -1,9 +1,11 @@
 import { writable, derived, get } from 'svelte/store';
 // Import from source for development
 import { PNP, ConfigBuilder } from '../../../../../src';
-// Import actual extensions from packages
-import { SolanaExtension } from '../../../../../packages/solana/src/extensions';
-import { EthereumExtension } from '../../../../../packages/ethereum/src/extensions';
+// Import wallet extensions from packages
+import { PhantomExtension } from '../../../../../packages/phantom/src';
+import { SolflareExtension } from '../../../../../packages/solflare/src';
+import { WalletConnectExtension } from '../../../../../packages/walletconnect/src';
+import { MetaMaskExtension } from '../../../../../packages/metamask/src';
 
 // Stores
 export const pnpInstance = writable<PNP | null>(null);
@@ -27,21 +29,21 @@ const initPNP = () => {
                 siws: 'guktk-fqaaa-aaaao-a4goa-cai',
                 siwe: 'r4zqx-aiaaa-aaaar-qbuia-cai',
             })
-            .withExtensions(SolanaExtension, EthereumExtension)
+            .withExtensions(PhantomExtension, SolflareExtension, WalletConnectExtension, MetaMaskExtension)
             .withIcAdapters()
             // Solana wallets
-            .withAdapter('phantomSiws', { enabled: true })
-            .withAdapter('solflareSiws', { enabled: true })
-            .withAdapter('walletconnectSiws', {
+            .withAdapter('phantom', { enabled: true })
+            .withAdapter('solflare', { enabled: true })
+            .withAdapter('walletconnect', {
                 enabled: true,
                 projectId: 'YOUR_PROJECT_ID',
                 appName: 'PNP Demo',
-                appDescription: 'Demo using WalletConnect SIWS',
+                appDescription: 'Demo using WalletConnect',
                 appUrl: 'https://example.com',
                 appIcons: ['https://example.com/icon.png']
             })
             // Ethereum wallets
-            .withAdapter('metamaskSiwe', { enabled: true })
+            .withAdapter('metamask', { enabled: true })
             .build()
     );
 
@@ -49,7 +51,8 @@ const initPNP = () => {
     
     // Auto-reconnect IC wallets (not Solana/Ethereum wallets)
     const stored = localStorage.getItem('pnpConnectedWallet');
-    if (stored && !stored.includes('Siws') && !stored.includes('Siwe')) {
+    const nonIcWallets = ['phantom', 'solflare', 'walletconnect', 'metamask'];
+    if (stored && !nonIcWallets.includes(stored)) {
         pnp.connect(stored).then(account => {
             if (account) {
                 isConnected.set(true);

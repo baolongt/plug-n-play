@@ -67,10 +67,24 @@ export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
     ...Object.keys(input.adapters || {})
   ]);
   
+  console.log('[createPNPConfig] Processing adapters:', {
+    builtInAdapters: Object.keys(Adapters),
+    extensionAdapters: Object.keys(extensionAdapters),
+    inputAdapters: Object.keys(input.adapters || {}),
+    allAdapterIds: Array.from(adapterIds)
+  });
+  
   for (const id of adapterIds) {
     // Check in order: built-in, extensions, overrides
     const base = Adapters[id] || extensionAdapters[id];
     const override = input.adapters?.[id];
+    
+    console.log(`[createPNPConfig] Processing adapter ${id}:`, {
+      hasBase: !!base,
+      hasOverride: !!override,
+      baseEnabled: base?.enabled,
+      overrideEnabled: override?.enabled
+    });
     
     // Custom adapter without base
     if (!base && override?.adapter) {
@@ -191,14 +205,17 @@ export class ConfigBuilder {
       exclude?: Array<'ii' | 'plug' | 'oisy' | 'nfid' | 'stoic'>;
     }
   ): this {
+    console.log('[ConfigBuilder] withIcAdapters called');
     const icIds = ['ii', 'plug', 'oisy', 'nfid', 'stoic'] as const;
     const excluded = new Set(overrides && 'exclude' in overrides ? (overrides.exclude || []) : []);
     if (!this.config.adapters) this.config.adapters = {};
     
     // No overrides provided: enable all IC adapters by default
     if (!overrides) {
+      console.log('[ConfigBuilder] Enabling all IC adapters');
       for (const id of icIds) {
         if (Adapters[id] && !excluded.has(id)) {
+          console.log(`[ConfigBuilder] Enabling adapter: ${id}`);
           this.config.adapters[id] = { enabled: true };
         }
       }

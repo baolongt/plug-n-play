@@ -7087,7 +7087,7 @@ function requireBignumber() {
               for (; len < i; str += "0", len++) ;
               str = toExponential2(str, e3);
             } else {
-              i -= ne + (id === 2 && e3 > ne);
+              i -= ne;
               str = toFixedPoint2(str, e3, "0");
               if (e3 + 1 > len) {
                 if (--i > 0) for (str += "."; i--; str += "0") ;
@@ -20628,6 +20628,7 @@ const isIIAdapterConfig = createTypeGuard(
 );
 class IIAdapter extends BaseAdapter {
   constructor(args) {
+    console.log("[II] IIAdapter v2 - WITH SESSION CHECK FIX");
     const normalized = (() => {
       if ("config" in args) {
         return args;
@@ -20655,17 +20656,28 @@ class IIAdapter extends BaseAdapter {
     this.initializeAuthClientSync();
   }
   initializeAuthClientSync() {
+    console.log("[II] Initializing AuthClient...");
     AuthClient.create({
       idleOptions: {
         idleTimeout: Number(this.config.timeout ?? 1e3 * 60 * 60 * 24),
         // Default 24 hours
         disableDefaultIdleCallback: true
       }
-    }).then((client) => {
+    }).then(async (client) => {
       this.authClient = client;
       this.authClient.idleManager?.registerCallback?.(() => this.refreshLogin());
-      this.logger.debug("[II] AuthClient initialized successfully");
+      console.log("[II] AuthClient created successfully");
+      const isAuth = await client.isAuthenticated();
+      const identity = client.getIdentity();
+      const principal = identity?.getPrincipal();
+      console.log("[II] Initial state after AuthClient creation:", {
+        isAuthenticated: isAuth,
+        hasIdentity: !!identity,
+        principal: principal?.toText(),
+        isAnonymous: principal?.isAnonymous()
+      });
     }).catch((err) => {
+      console.error("[II] Failed to create AuthClient:", err);
       this.handleError("Failed to create AuthClient", err);
       this.setState(Adapter.Status.ERROR);
     });
@@ -20694,16 +20706,45 @@ class IIAdapter extends BaseAdapter {
   async connect() {
     try {
       this.setState(Adapter.Status.CONNECTING);
+      console.log("[II] ========== CONNECT CALLED ==========");
+      console.log("[II] AuthClient exists:", !!this.authClient);
       await this.ensureAuthClient();
+      console.log("[II] AuthClient ensured");
+      console.log("[II] Checking isAuthenticated...");
+      const isAuthenticated = await this.authClient.isAuthenticated();
+      console.log("[II] isAuthenticated result:", isAuthenticated);
+      if (isAuthenticated) {
+        console.log("[II] User is authenticated, checking identity...");
+        const identity = this.authClient.getIdentity();
+        const principal = identity?.getPrincipal();
+        console.log("[II] Identity check:", {
+          hasIdentity: !!identity,
+          identityType: identity?.constructor?.name,
+          principal: principal?.toText(),
+          isAnonymous: principal?.isAnonymous(),
+          principalType: principal?.constructor?.name
+        });
+        if (identity && principal && !principal.isAnonymous()) {
+          console.log("[II] ✅ Valid session found, restoring WITHOUT popup");
+          const account = await this.createAccountFromIdentity(identity);
+          this.setState(Adapter.Status.CONNECTED);
+          return account;
+        } else {
+          console.log("[II] ❌ Identity invalid despite being authenticated");
+        }
+      } else {
+        console.log("[II] ❌ Not authenticated according to AuthClient");
+      }
+      console.log("[II] 🚨 OPENING LOGIN POPUP");
       return await this.performLogin();
     } catch (error) {
+      console.error("[II] Connect error:", error);
       this.setState(Adapter.Status.ERROR);
       throw error;
     }
   }
   async performLogin() {
     return new Promise((resolve, reject) => {
-      let checkCompleted = false;
       const loginOptions = {
         derivationOrigin: this.config.derivationOrigin,
         identityProvider: this.config.iiProviderUrl || "https://id.ai",
@@ -20714,7 +20755,6 @@ class IIAdapter extends BaseAdapter {
           return `width=500,height=600,left=${screen.width / 2 - 250},top=${screen.height / 2 - 300}`;
         })(),
         onSuccess: async () => {
-          checkCompleted = true;
           this.logger.debug("[II] Login success callback triggered");
           try {
             const identity = this.authClient.getIdentity();
@@ -20727,32 +20767,13 @@ class IIAdapter extends BaseAdapter {
           }
         },
         onError: (error) => {
-          checkCompleted = true;
           this.handleError("Login error", error || "Unknown error");
           this.setState(Adapter.Status.ERROR);
           reject(new Error(`II Authentication failed: ${error || "Unknown error"}`));
         }
       };
-      this.logger.debug("[II] Starting login immediately for Safari compatibility");
+      this.logger.debug("[II] Opening login popup");
       this.authClient.login(loginOptions);
-      this.authClient.isAuthenticated().then(async (isAuthenticated) => {
-        if (!checkCompleted && isAuthenticated) {
-          const identity = this.authClient.getIdentity();
-          if (identity && !identity.getPrincipal().isAnonymous()) {
-            checkCompleted = true;
-            try {
-              const account = await this.createAccountFromIdentity(identity);
-              this.setState(Adapter.Status.CONNECTED);
-              resolve(account);
-            } catch (error) {
-              this.setState(Adapter.Status.ERROR);
-              reject(error);
-            }
-          }
-        }
-      }).catch((err) => {
-        this.logger.debug("[II] Background auth check failed:", err);
-      });
     });
   }
   async createAccountFromIdentity(identity) {
@@ -22586,7 +22607,7 @@ function clone(configObject) {
         for (; len < i; str += "0", len++) ;
         str = toExponential(str, e3);
       } else {
-        i -= ne + (id === 2 && e3 > ne);
+        i -= ne;
         str = toFixedPoint(str, e3, "0");
         if (e3 + 1 > len) {
           if (--i > 0) for (str += "."; i--; str += "0") ;
@@ -24176,9 +24197,21 @@ function createPNPConfig(input = {}) {
     ...Object.keys(extensionAdapters),
     ...Object.keys(input.adapters || {})
   ]);
+  console.log("[createPNPConfig] Processing adapters:", {
+    builtInAdapters: Object.keys(Adapters),
+    extensionAdapters: Object.keys(extensionAdapters),
+    inputAdapters: Object.keys(input.adapters || {}),
+    allAdapterIds: Array.from(adapterIds)
+  });
   for (const id of adapterIds) {
     const base = Adapters[id] || extensionAdapters[id];
     const override = input.adapters?.[id];
+    console.log(`[createPNPConfig] Processing adapter ${id}:`, {
+      hasBase: !!base,
+      hasOverride: !!override,
+      baseEnabled: base?.enabled,
+      overrideEnabled: override?.enabled
+    });
     if (!base && override?.adapter) {
       adapters[id] = override;
       continue;
@@ -24275,12 +24308,15 @@ class ConfigBuilder {
    * - withIcAdapters({ ii: false }) // disables ii while enabling the rest
    */
   withIcAdapters(overrides) {
+    console.log("[ConfigBuilder] withIcAdapters called");
     const icIds = ["ii", "plug", "oisy", "nfid", "stoic"];
     const excluded = new Set(overrides && "exclude" in overrides ? overrides.exclude || [] : []);
     if (!this.config.adapters) this.config.adapters = {};
     if (!overrides) {
+      console.log("[ConfigBuilder] Enabling all IC adapters");
       for (const id of icIds) {
         if (Adapters[id] && !excluded.has(id)) {
+          console.log(`[ConfigBuilder] Enabling adapter: ${id}`);
           this.config.adapters[id] = { enabled: true };
         }
       }
