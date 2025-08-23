@@ -14,13 +14,14 @@
     }
   },
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build": "cd ../.. && BUILD_PACKAGE=okx vite build",
     "build:all": "echo 'Building OKX package...' && npm run build",
     "build:ethereum": "echo 'Not applicable for OKX package'",
     "build:solana": "echo 'Not applicable for OKX package'",
     "build:okx": "npm run build",
     "dev": "vite build --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@windoge98/plug-n-play": "0.1.0-beta.10",

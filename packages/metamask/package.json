@@ -18,9 +18,10 @@
     "src"
   ],
   "scripts": {
-    "build": "tsc && vite build",
+    "build": "cd ../.. && BUILD_PACKAGE=metamask vite build",
     "dev": "vite",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@windoge98/plug-n-play": "0.1.0-beta.10",
