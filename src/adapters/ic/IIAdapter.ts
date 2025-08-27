@@ -17,7 +17,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
   private agent: HttpAgent | null = null;
 
   constructor(args: { adapter: any; config: IIAdapterConfig } | IIAdapterConfig) {
-    console.log('[II] IIAdapter v2 - WITH SESSION CHECK FIX');
     // Support simplified constructor in tests: new IIAdapter(config)
     const normalized = ((): { adapter: any; config: IIAdapterConfig } => {
       if ('config' in (args as any)) {
@@ -49,7 +48,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
   }
 
   private initializeAuthClientSync(): void {
-    console.log('[II] Initializing AuthClient...');
     // Initialize AuthClient with transport for better session management
     AuthClient.create({
       idleOptions: {
@@ -59,21 +57,7 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
     }).then(async client => {
       this.authClient = client;
       this.authClient.idleManager?.registerCallback?.(() => this.refreshLogin());
-      console.log('[II] AuthClient created successfully');
-      
-      // Check if already authenticated on initialization
-      const isAuth = await client.isAuthenticated();
-      const identity = client.getIdentity();
-      const principal = identity?.getPrincipal();
-      
-      console.log('[II] Initial state after AuthClient creation:', {
-        isAuthenticated: isAuth,
-        hasIdentity: !!identity,
-        principal: principal?.toText(),
-        isAnonymous: principal?.isAnonymous()
-      });
     }).catch(err => {
-      console.error('[II] Failed to create AuthClient:', err);
       this.handleError('Failed to create AuthClient', err);
       this.setState(Adapter.Status.ERROR);
     });
@@ -111,48 +95,27 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
   async connect(): Promise<Wallet.Account> {
     try {
       this.setState(Adapter.Status.CONNECTING);
-      console.log('[II] ========== CONNECT CALLED ==========');
-      console.log('[II] AuthClient exists:', !!this.authClient);
       
       // Ensure AuthClient is ready
       await this.ensureAuthClient();
-      console.log('[II] AuthClient ensured');
       
       // Check if already authenticated before opening popup
-      console.log('[II] Checking isAuthenticated...');
       const isAuthenticated = await this.authClient!.isAuthenticated();
-      console.log('[II] isAuthenticated result:', isAuthenticated);
       
       if (isAuthenticated) {
-        console.log('[II] User is authenticated, checking identity...');
         const identity = this.authClient!.getIdentity();
         const principal = identity?.getPrincipal();
         
-        console.log('[II] Identity check:', {
-          hasIdentity: !!identity,
-          identityType: identity?.constructor?.name,
-          principal: principal?.toText(),
-          isAnonymous: principal?.isAnonymous(),
-          principalType: principal?.constructor?.name
-        });
-        
         if (identity && principal && !principal.isAnonymous()) {
-          console.log('[II] ✅ Valid session found, restoring WITHOUT popup');
           const account = await this.createAccountFromIdentity(identity);
           this.setState(Adapter.Status.CONNECTED);
           return account;
-        } else {
-          console.log('[II] ❌ Identity invalid despite being authenticated');
         }
-      } else {
-        console.log('[II] ❌ Not authenticated according to AuthClient');
       }
       
       // Not authenticated or invalid session - open login popup
-      console.log('[II] 🚨 OPENING LOGIN POPUP');
       return await this.performLogin();
     } catch (error) {
-      console.error('[II] Connect error:', error);
       this.setState(Adapter.Status.ERROR);
       throw error;
     }
@@ -169,7 +132,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
           return `width=500,height=600,left=${screen.width / 2 - 250},top=${screen.height / 2 - 300}`;
         })(),
         onSuccess: async () => {
-          this.logger.debug('[II] Login success callback triggered');
           try {
             const identity = this.authClient!.getIdentity();
             const account = await this.createAccountFromIdentity(identity);
@@ -187,7 +149,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
         },
       };
       
-      this.logger.debug('[II] Opening login popup');
       this.authClient!.login(loginOptions);
     });
   }
@@ -198,7 +159,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
     }
 
     const principal = identity.getPrincipal();
-    this.logger.debug('[II] Principal from identity:', { principal: principal.toText() });
 
     if (principal.isAnonymous()) {
       throw new Error(

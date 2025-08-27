@@ -6,6 +6,7 @@ import { PhantomExtension } from '../../../../../packages/phantom/src';
 import { SolflareExtension } from '../../../../../packages/solflare/src';
 import { WalletConnectExtension } from '../../../../../packages/walletconnect/src';
 import { MetaMaskExtension } from '../../../../../packages/metamask/src';
+import { RabbyExtension } from '../../../../../packages/rabby/src';
 
 // Stores
 export const pnpInstance = writable<PNP | null>(null);
@@ -29,7 +30,7 @@ const initPNP = () => {
                 siws: 'guktk-fqaaa-aaaao-a4goa-cai',
                 siwe: 'r4zqx-aiaaa-aaaar-qbuia-cai',
             })
-            .withExtensions(PhantomExtension, SolflareExtension, WalletConnectExtension, MetaMaskExtension)
+            .withExtensions(PhantomExtension, SolflareExtension, WalletConnectExtension, MetaMaskExtension, RabbyExtension)
             .withIcAdapters()
             // Solana wallets
             .withAdapter('phantom', { enabled: true })
@@ -44,6 +45,7 @@ const initPNP = () => {
             })
             // Ethereum wallets
             .withAdapter('metamask', { enabled: true })
+            .withAdapter('rabby', { enabled: true })
             .build()
     );
 
@@ -51,7 +53,7 @@ const initPNP = () => {
     
     // Auto-reconnect IC wallets (not Solana/Ethereum wallets)
     const stored = localStorage.getItem('pnpConnectedWallet');
-    const nonIcWallets = ['phantom', 'solflare', 'walletconnect', 'metamask'];
+    const nonIcWallets = ['phantom', 'solflare', 'walletconnect', 'metamask', 'rabby'];
     if (stored && !nonIcWallets.includes(stored)) {
         pnp.connect(stored).then(account => {
             if (account) {

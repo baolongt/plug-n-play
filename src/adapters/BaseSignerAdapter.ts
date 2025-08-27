@@ -77,13 +77,25 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     // Create an abort controller for this connection attempt
     this.connectionAbortController = new AbortController();
     
+    // Track if we successfully got accounts
+    let accountsReceived = false;
+    let connectionComplete = false;
+    
     // Set up window focus detection to cancel if user closes popup
+    // But only if accounts haven't been received yet
     const focusPromise = new Promise<never>((_, reject) => {
       this.windowFocusHandler = () => {
-        // Remove listener immediately to prevent multiple triggers
-        windowEvents.removeEventListener('focus', this.windowFocusHandler!);
-        this.windowFocusHandler = null;
-        reject(new Error('Connection cancelled - popup window was closed'));
+        // Add a small delay to allow the connection to complete after popup closes
+        setTimeout(() => {
+          // Only reject if we haven't received accounts AND connection isn't complete
+          // This prevents cancellation when the popup closes after successful approval
+          if (!accountsReceived && !connectionComplete) {
+            // Remove listener immediately to prevent multiple triggers
+            windowEvents.removeEventListener('focus', this.windowFocusHandler!);
+            this.windowFocusHandler = null;
+            reject(new Error('Connection cancelled - popup window was closed'));
+          }
+        }, 500); // 500ms delay to allow connection to complete
       };
       windowEvents.addEventListener('focus', this.windowFocusHandler);
     });
@@ -92,7 +104,11 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       // Race between getting accounts, detecting window focus, and timeout
       const accounts = await withTimeout(
         Promise.race([
-          this.signerAgent!.signer.accounts(),
+          this.signerAgent!.signer.accounts().then(result => {
+            // Mark that we've successfully received accounts
+            accountsReceived = true;
+            return result;
+          }),
           focusPromise
         ]),
         DEFAULT_TIMEOUTS.authTimeout!,
@@ -109,6 +125,8 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       if (this.signerAgent) {
         this.signerAgent.replaceAccount(principal);
       }
+      // Mark connection as complete before returning
+      connectionComplete = true;
       return principal;
     } finally {
       // Clean up the focus listener if it's still attached

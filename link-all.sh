@@ -25,6 +25,8 @@ echo "   @windoge98/pnp-walletconnect"
 cd packages/walletconnect && npm link && cd ../..
 echo "   @windoge98/pnp-coinbase"
 cd packages/coinbase && npm link && cd ../..
+echo "   @windoge98/pnp-rabby"
+cd packages/rabby && npm link && cd ../..
 
 # Add more wallet packages as they're created
 # echo "   @windoge98/pnp-metamask-multi"

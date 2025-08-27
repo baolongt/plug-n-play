@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-walletconnect",
-  "version": "0.1.0-beta.14",
+  "version": "0.1.0-beta.17",
   "description": "WalletConnect adapter for PNP (Plug N Play)",
   "main": "./dist/index.js",
   "module": "./dist/index.es.js",
@@ -26,17 +26,17 @@
   "dependencies": {
     "@solana/wallet-adapter-walletconnect": "^0.1.16",
     "base-x": "^5.0.1",
-    "buffer": "^6.0.3"
-  },
-  "peerDependencies": {
-    "@windoge98/plug-n-play": ">=0.1.0-beta",
-    "@dfinity/agent": "^2.2.1",
-    "@dfinity/candid": "^2.2.1",
-    "@dfinity/identity": "^2.2.1",
-    "@dfinity/principal": "^2.2.1",
+    "buffer": "^6.0.3",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/web3.js": "^1.98.0",
     "bs58": "^5.0.0 || ^6.0.0"
+  },
+  "peerDependencies": {
+    "@windoge98/plug-n-play": ">=0.1.0-beta",
+    "@dfinity/agent": "^2.4.1",
+    "@dfinity/candid": "^2.4.1",
+    "@dfinity/identity": "^2.4.1",
+    "@dfinity/principal": "^2.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.6",

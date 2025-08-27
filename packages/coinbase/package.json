@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-coinbase",
-  "version": "0.1.0-beta.14",
+  "version": "0.1.0-beta.17",
   "description": "Coinbase wallet adapter for Plug-n-Play",
   "main": "./dist/index.js",
   "module": "./dist/index.es.js",
@@ -24,16 +24,16 @@
   },
   "peerDependencies": {
     "@windoge98/plug-n-play": ">=0.1.0-beta",
-    "@dfinity/agent": "^2.1.3",
-    "@dfinity/identity": "^2.1.3",
-    "@dfinity/principal": "^2.1.3",
-    "@solana/wallet-adapter-base": "^0.9.23",
-    "@solana/web3.js": "^1.87.0",
-    "bs58": "^5.0.0"
+    "@dfinity/agent": "^2.4.1",
+    "@dfinity/identity": "^2.4.1",
+    "@dfinity/principal": "^2.4.1"
   },
   "devDependencies": {
     "typescript": "^5.3.3",
-    "vite": "^7.1.2"
+    "vite": "^7.1.2",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/web3.js": "^1.87.0",
+    "bs58": "^5.0.0"
   },
   "files": [
     "dist",

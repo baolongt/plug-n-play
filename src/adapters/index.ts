@@ -5,7 +5,7 @@ import { getDefaultTransportConfig } from "../utils";
 
 // Import logos for IC wallets only
 import oisyLogo from "../../assets/oisy_logo.webp";
-import nfidLogo from "../../assets/nfid.webp";
+import nfidLogo from "../../assets/nfid.png";
 import dfinityLogo from "../../assets/dfinity.webp";
 import plugLogo from "../../assets/plug.webp";
 import stoicLogo from "../../assets/stoic.jpg";

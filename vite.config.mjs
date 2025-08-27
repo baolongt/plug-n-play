@@ -9,8 +9,8 @@ import inject from "@rollup/plugin-inject";
 
 // Determine build environment and package
 const isProd = process.env.NODE_ENV === "production";
-const buildPackage = process.env.BUILD_PACKAGE || "main"; // 'main', 'metamask', 'okx', 'phantom', 'coinbase', etc.
-const needsNodePolyfills = ['metamask', 'okx', 'phantom', 'solflare', 'walletconnect', 'coinbase'].includes(buildPackage);
+const buildPackage = process.env.BUILD_PACKAGE || "main"; // 'main', 'metamask', 'okx', 'phantom', 'coinbase', 'rabby', etc.
+const needsNodePolyfills = ['metamask', 'okx', 'phantom', 'solflare', 'walletconnect', 'coinbase', 'rabby'].includes(buildPackage);
 
 // Package-specific configurations
 const packageConfigs = {
@@ -210,6 +210,34 @@ const packageConfigs = {
     },
     copyAssets: false,
     assetsInlineLimit: 100000, // Inline Coinbase logo
+  },
+  rabby: {
+    entry: resolve(__dirname, "packages/rabby/src/index.ts"),
+    name: "PNPRabby",
+    fileName: (format) => format === 'es' ? 'index.es.js' : 'index.js',
+    outDir: "packages/rabby/dist",
+    external: [
+      "@dfinity/agent",
+      "@dfinity/identity",
+      "@dfinity/principal",
+      "ic-siwe-js",
+      "viem",
+      "viem/chains",
+      "@windoge98/plug-n-play",
+      /^@windoge98\//,
+    ],
+    formats: ["es", "cjs"],
+    dtsOptions: {
+      insertTypesEntry: true,
+      rollupTypes: false,
+      root: "packages/rabby",
+      outDir: "dist",
+      include: ["src/**/*"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts"],
+      tsConfigFilePath: "./tsconfig.json",
+    },
+    copyAssets: false,
+    assetsInlineLimit: 100000, // Inline Rabby logo
   },
 };
 

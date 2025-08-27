@@ -1,7 +1,7 @@
 {
-  "name": "@windoge98/pnp-metamask",
+  "name": "@windoge98/pnp-rabby",
   "version": "0.1.0-beta.17",
-  "description": "MetaMask wallet adapter for PNP using SIWE",
+  "description": "Rabby wallet adapter for PNP using SIWE",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -18,7 +18,7 @@
     "src"
   ],
   "scripts": {
-    "build": "cd ../.. && BUILD_PACKAGE=metamask vite build",
+    "build": "cd ../.. && BUILD_PACKAGE=rabby vite build",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
@@ -36,5 +36,8 @@
   "devDependencies": {
     "typescript": "^5.9.2",
     "vite": "^7.1.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
