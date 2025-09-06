@@ -32,6 +32,11 @@ const initPNP = () => {
             })
             .withExtensions(PhantomExtension, SolflareExtension, WalletConnectExtension, MetaMaskExtension, RabbyExtension)
             .withIcAdapters()
+            // Configure Plug wallet with account selection enabled (default)
+            .withAdapter('plug', { 
+                enabled: true,
+                // disableAccountSelection: false  // Uncomment to disable account selection UI
+            })
             // Solana wallets
             .withAdapter('phantom', { enabled: true })
             .withAdapter('solflare', { enabled: true })

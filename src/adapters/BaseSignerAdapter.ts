@@ -8,6 +8,7 @@ import { Adapter, Wallet } from "../types/index.d";
 import { createAccountFromPrincipal } from "../utils";
 import { withTimeout, DEFAULT_TIMEOUTS } from "../utils/timeout";
 import { storage, windowEvents } from "../utils/browser";
+import { getAccountSelector, cleanupAccountSelector } from "../ui/AccountSelector";
 
 /**
  * Base class for adapters that use the Signer/SignerAgent pattern
@@ -120,8 +121,37 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
         throw new Error(`No accounts returned from ${this.adapter.walletName}`);
       }
 
-      const principal = accounts[0].owner;
+      // Handle account selection
+      let selectedIndex = 0;
+      
+      // Check if account selection should be shown
+      if (accounts.length > 1 && this.shouldShowAccountSelection()) {
+        const selector = getAccountSelector();
+        const selection = await selector.show({
+          walletName: this.adapter.walletName,
+          accounts: accounts,
+          onSelect: (index) => {
+            // Callback handled in promise
+          },
+          onCancel: () => {
+            // Callback handled in promise
+          }
+        });
+        
+        if (selection === null) {
+          // User cancelled
+          await this.disconnect();
+          throw new Error('Account selection cancelled');
+        }
+        
+        selectedIndex = selection;
+      }
+
+      const principal = accounts[selectedIndex].owner;
       storage.setItem(this.principalStorageKey, principal.toText());
+      // Also store the selected account index for future reference
+      storage.setItem(`${this.principalStorageKey}_index`, selectedIndex.toString());
+      
       if (this.signerAgent) {
         this.signerAgent.replaceAccount(principal);
       }
@@ -136,6 +166,19 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       }
       this.connectionAbortController = null;
     }
+  }
+
+  /**
+   * Determines whether to show account selection UI
+   * Can be overridden by subclasses for wallet-specific behavior
+   */
+  protected shouldShowAccountSelection(): boolean {
+    // Check if account selection is explicitly disabled in config
+    if (this.config && 'disableAccountSelection' in this.config) {
+      return !(this.config as any).disableAccountSelection;
+    }
+    // Default to showing selection for multiple accounts
+    return true;
   }
 
   async connect(): Promise<Wallet.Account> {
@@ -260,9 +303,13 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     this.agent = null;
     this.signerAgent = null;
     
-    // Clear stored principal
+    // Clear stored principal and account index
     if (this.principalStorageKey) {
       storage.removeItem(this.principalStorageKey);
+      storage.removeItem(`${this.principalStorageKey}_index`);
     }
+    
+    // Clean up account selector UI
+    cleanupAccountSelector();
   }
 } 

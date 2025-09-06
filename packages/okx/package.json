@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-okx",
-  "version": "0.1.0-beta.17",
+  "version": "0.1.0-beta.18",
   "description": "OKX multi-chain wallet adapter for Plug-n-Play",
   "main": "./dist/index.js",
   "module": "./dist/index.es.js",

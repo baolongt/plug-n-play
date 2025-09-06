@@ -42,6 +42,9 @@
         <label>ICP Balance</label>
         <code>{formatICP($balance)} ICP</code>
       </div>
+      <div class="note">
+        💡 <strong>Tip:</strong> If using Plug wallet with multiple accounts, you can select which account to use during connection.
+      </div>
       <button class="btn-disconnect" on:click={disconnectWallet}>
         Disconnect
       </button>
@@ -239,5 +242,19 @@
     font-size: 0.75rem;
     max-height: 200px;
     overflow-y: auto;
+  }
+
+  .note {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: #e6f7ff;
+    border: 1px solid #91d5ff;
+    border-radius: 6px;
+    color: #0050b3;
+    font-size: 0.875rem;
+  }
+
+  .note strong {
+    font-weight: 600;
   }
 </style>

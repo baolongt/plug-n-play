@@ -31,6 +31,7 @@ export interface UnifiedSignerConfig {
   hostUrl?: string;
   fetchRootKey?: boolean;
   verifyQuerySignatures?: boolean;
+  disableAccountSelection?: boolean; // New: Option to disable account selection UI
   [key: string]: any;
 }
 
@@ -167,6 +168,20 @@ export class UnifiedSignerAdapter extends BaseSignerAdapter<UnifiedSignerConfig>
   protected cleanupInternal(): void {
     super.cleanupInternal();
     this.transport = null;
+  }
+
+  /**
+   * Override to enable account selection for Plug wallet by default
+   * Can be disabled via config.disableAccountSelection
+   */
+  protected shouldShowAccountSelection(): boolean {
+    // For Plug wallet, default to showing account selection
+    // unless explicitly disabled in config
+    if (this.signerType === SignerType.PLUG) {
+      return !this.config.disableAccountSelection;
+    }
+    // For other wallets, use parent class behavior
+    return super.shouldShowAccountSelection();
   }
 
   /**

@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/pnp-solflare",
-  "version": "0.1.0-beta.17",
+  "version": "0.1.0-beta.18",
   "description": "Solflare Wallet adapter for PNP (Plug N Play)",
   "main": "./dist/index.js",
   "module": "./dist/index.es.js",
