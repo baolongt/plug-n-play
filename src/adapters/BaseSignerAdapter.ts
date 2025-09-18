@@ -57,7 +57,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
 
   protected async connectWithStoredPrincipal(): Promise<Principal | null> {
     const storedPrincipal = storage.getItem(this.principalStorageKey);
-    
+
     if (storedPrincipal && storedPrincipal !== "null") {
       try {
         const principal = Principal.fromText(storedPrincipal);
@@ -77,11 +77,11 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
   protected async connectWithAccounts(): Promise<Principal> {
     // Create an abort controller for this connection attempt
     this.connectionAbortController = new AbortController();
-    
+
     // Track if we successfully got accounts
     let accountsReceived = false;
     let connectionComplete = false;
-    
+
     // Set up window focus detection to cancel if user closes popup
     // But only if accounts haven't been received yet
     const focusPromise = new Promise<never>((_, reject) => {
@@ -100,7 +100,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       };
       windowEvents.addEventListener('focus', this.windowFocusHandler);
     });
-    
+
     try {
       // Race between getting accounts, detecting window focus, and timeout
       const accounts = await withTimeout(
@@ -115,7 +115,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
         DEFAULT_TIMEOUTS.authTimeout!,
         `${this.adapter.walletName} connection timed out after ${DEFAULT_TIMEOUTS.authTimeout! / 1000}s`
       );
-      
+
       if (!accounts || accounts.length === 0) {
         await this.disconnect();
         throw new Error(`No accounts returned from ${this.adapter.walletName}`);
@@ -123,7 +123,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
 
       // Handle account selection
       let selectedIndex = 0;
-      
+
       // Check if account selection should be shown
       if (accounts.length > 1 && this.shouldShowAccountSelection()) {
         const selector = getAccountSelector();
@@ -137,13 +137,13 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
             // Callback handled in promise
           }
         });
-        
+
         if (selection === null) {
           // User cancelled
           await this.disconnect();
           throw new Error('Account selection cancelled');
         }
-        
+
         selectedIndex = selection;
       }
 
@@ -151,7 +151,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       storage.setItem(this.principalStorageKey, principal.toText());
       // Also store the selected account index for future reference
       storage.setItem(`${this.principalStorageKey}_index`, selectedIndex.toString());
-      
+
       if (this.signerAgent) {
         this.signerAgent.replaceAccount(principal);
       }
@@ -186,14 +186,14 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
     try {
       // Ensure transport is initialized
       await this.ensureTransportInitialized();
-      
+
       if (!this.signerAgent || !this.signerAgent.signer) {
         throw new Error(`${this.adapter.walletName} signer agent not initialized. Please ensure extension is installed.`);
       }
-      
+
       // Try to connect with stored principal first
       let principal = await this.connectWithStoredPrincipal();
-      
+
       // If no stored principal or it failed, get accounts
       if (!principal) {
         principal = await this.connectWithAccounts();
@@ -210,7 +210,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
         if (!this.signerAgent) throw new Error("Signer agent not ready for fetchRootKey");
         await this.signerAgent.fetchRootKey();
       }
-      
+
       this.setState(Adapter.Status.CONNECTED);
       return createAccountFromPrincipal(principal);
     } catch (error) {
@@ -249,7 +249,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       this.connectionAbortController.abort();
       this.connectionAbortController = null;
     }
-    
+
     if (this.signer) {
       try {
         this.signer.closeChannel();
@@ -288,7 +288,7 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       this.connectionAbortController.abort();
       this.connectionAbortController = null;
     }
-    
+
     // Clean up signer
     if (this.signer) {
       try {
@@ -298,18 +298,32 @@ export abstract class BaseSignerAdapter<T extends AdapterSpecificConfig = Adapte
       }
       this.signer = null;
     }
-    
+
     // Clean up agents
     this.agent = null;
     this.signerAgent = null;
-    
+
     // Clear stored principal and account index
     if (this.principalStorageKey) {
       storage.removeItem(this.principalStorageKey);
       storage.removeItem(`${this.principalStorageKey}_index`);
     }
-    
+
     // Clean up account selector UI
     cleanupAccountSelector();
+  }
+
+  /**
+   * Get current Signer instance
+   */
+  public getSigner(): Signer | null {
+    return this.signer;
+  }
+
+  /**
+ * Get current SignerAgent instance
+ */
+  public getSignerAgent(): SignerAgent<Signer> | null {
+    return this.signerAgent;
   }
 } 
