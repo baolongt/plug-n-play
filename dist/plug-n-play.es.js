@@ -7087,7 +7087,7 @@ function requireBignumber() {
               for (; len < i; str += "0", len++) ;
               str = toExponential2(str, e);
             } else {
-              i -= ne;
+              i -= ne + (id === 2 && e > ne);
               str = toFixedPoint2(str, e, "0");
               if (e + 1 > len) {
                 if (--i > 0) for (str += "."; i--; str += "0") ;
@@ -21487,7 +21487,7 @@ function clone(configObject) {
         for (; len < i; str += "0", len++) ;
         str = toExponential(str, e);
       } else {
-        i -= ne;
+        i -= ne + (id === 2 && e > ne);
         str = toFixedPoint(str, e, "0");
         if (e + 1 > len) {
           if (--i > 0) for (str += "."; i--; str += "0") ;
@@ -23121,6 +23121,18 @@ class BaseSignerAdapter extends BaseAdapter {
       storage.removeItem(`${this.principalStorageKey}_index`);
     }
     cleanupAccountSelector();
+  }
+  /**
+   * Get current Signer instance
+   */
+  getSigner() {
+    return this.signer;
+  }
+  /**
+  * Get current SignerAgent instance
+  */
+  getSignerAgent() {
+    return this.signerAgent;
   }
 }
 var SignerType = /* @__PURE__ */ ((SignerType2) => {
