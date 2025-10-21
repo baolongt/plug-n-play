@@ -70,12 +70,12 @@ export interface AdapterInterface {
   ): any;
 
   /**
-   * Get current Signer instance, only exist if signer implement BaseSignerAdapter
+   * Get current Signer instance, only exist if adapter implement BaseSignerAdapter
    */
   getSigner(): Signer | null;
 
   /**
-   * Get current SignerAgent instance, only exist if signer implement BaseSignerAdapter
+   * Get current SignerAgent instance, only exist if adapter implement BaseSignerAdapter
    */
   getSignerAgent(): SignerAgent<Signer> | null;
 }
