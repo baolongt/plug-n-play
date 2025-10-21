@@ -7087,7 +7087,7 @@ function requireBignumber() {
               for (; len < i; str += "0", len++) ;
               str = toExponential2(str, e);
             } else {
-              i -= ne;
+              i -= ne + (id === 2 && e > ne);
               str = toFixedPoint2(str, e, "0");
               if (e + 1 > len) {
                 if (--i > 0) for (str += "."; i--; str += "0") ;
@@ -19611,9 +19611,11 @@ class IIAdapter extends BaseAdapter {
   }
   async performLogin() {
     return new Promise((resolve, reject) => {
+      const identityProvider = this.config.iiProviderUrl || "https://id.ai";
+      console.log(`[IIAdapter] Using Identity Provider: ${identityProvider}`);
       const loginOptions = {
         derivationOrigin: this.config.derivationOrigin,
-        identityProvider: this.config.iiProviderUrl || "https://id.ai",
+        identityProvider,
         maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1e3 * 1e3 * 1e3),
         // Default 1 day
         windowOpenerFeatures: (() => {
@@ -19673,6 +19675,21 @@ class IIAdapter extends BaseAdapter {
     if (!identity) throw new Error("Identity not available");
     const principal = identity.getPrincipal();
     return principal.toText();
+  }
+  /**
+   * Get the identity provider URL being used
+   * @returns The identity provider URL (e.g., 'https://id.ai' for II 2.0 or 'https://identity.ic0.app' for II 1.0)
+   */
+  getIdentityProvider() {
+    return this.config.iiProviderUrl || "https://id.ai";
+  }
+  /**
+   * Check if using the legacy II provider
+   * @returns true if using the legacy provider (identity.ic0.app or icp0.io)
+   */
+  isLegacyProvider() {
+    const provider = this.getIdentityProvider();
+    return provider.includes("ic0.app") || provider.includes("icp0.io");
   }
   async refreshLogin() {
     try {
@@ -21470,7 +21487,7 @@ function clone(configObject) {
         for (; len < i; str += "0", len++) ;
         str = toExponential(str, e);
       } else {
-        i -= ne;
+        i -= ne + (id === 2 && e > ne);
         str = toFixedPoint(str, e, "0");
         if (e + 1 > len) {
           if (--i > 0) for (str += "."; i--; str += "0") ;
@@ -23105,6 +23122,18 @@ class BaseSignerAdapter extends BaseAdapter {
     }
     cleanupAccountSelector();
   }
+  /**
+   * Get current Signer instance
+   */
+  getSigner() {
+    return this.signer;
+  }
+  /**
+  * Get current SignerAgent instance
+  */
+  getSignerAgent() {
+    return this.signerAgent;
+  }
 }
 var SignerType = /* @__PURE__ */ ((SignerType2) => {
   SignerType2["OISY"] = "oisy";
@@ -23379,7 +23408,26 @@ const Adapters = {
       fetchRootKey: true,
       verifyQuerySignatures: false,
       timeout: 24 * 60 * 60 * 1e3,
-      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai"
+      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
+      iiProviderUrl: "https://id.ai"
+      // II 2.0 (new domain)
+    }
+  },
+  ii_legacy: {
+    id: "ii_legacy",
+    enabled: true,
+    walletName: "Internet Identity (Legacy)",
+    logo: dfinityLogo,
+    website: "https://internetcomputer.org",
+    chain: "ICP",
+    adapter: IIAdapter,
+    config: {
+      fetchRootKey: true,
+      verifyQuerySignatures: false,
+      timeout: 24 * 60 * 60 * 1e3,
+      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
+      iiProviderUrl: "https://identity.ic0.app"
+      // II 1.0 (legacy domain)
     }
   },
   plug: {

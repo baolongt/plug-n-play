@@ -70,6 +70,23 @@ export const Adapters: Record<string, Adapter.Config> = {
       verifyQuerySignatures: false,
       timeout: 24 * 60 * 60 * 1000,
       localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
+      iiProviderUrl: "https://id.ai", // II 2.0 (new domain)
+    },
+  },
+  ii_legacy: {
+    id: 'ii_legacy',
+    enabled: true,
+    walletName: "Internet Identity (Legacy)",
+    logo: dfinityLogo,
+    website: "https://internetcomputer.org",
+    chain: 'ICP',
+    adapter: IIAdapter,
+    config: {
+      fetchRootKey: true,
+      verifyQuerySignatures: false,
+      timeout: 24 * 60 * 60 * 1000,
+      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
+      iiProviderUrl: "https://identity.ic0.app", // II 1.0 (legacy domain)
     },
   },
   plug: {

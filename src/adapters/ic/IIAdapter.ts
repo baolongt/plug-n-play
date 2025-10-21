@@ -123,9 +123,15 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
 
   private async performLogin(): Promise<Wallet.Account> {
     return new Promise<Wallet.Account>((resolve, reject) => {
+      // Determine which II provider to use
+      const identityProvider = this.config.iiProviderUrl || 'https://id.ai';
+      
+      // Log which provider is being used for debugging
+      console.log(`[IIAdapter] Using Identity Provider: ${identityProvider}`);
+      
       const loginOptions = {
         derivationOrigin: this.config.derivationOrigin,
-        identityProvider: this.config.iiProviderUrl || 'https://id.ai',
+        identityProvider,
         maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
         windowOpenerFeatures: (() => {
           const screen = getScreenDimensions();
@@ -202,6 +208,23 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
     if (!identity) throw new Error("Identity not available");
     const principal = identity.getPrincipal();
     return principal.toText();
+  }
+
+  /**
+   * Get the identity provider URL being used
+   * @returns The identity provider URL (e.g., 'https://id.ai' for II 2.0 or 'https://identity.ic0.app' for II 1.0)
+   */
+  getIdentityProvider(): string {
+    return this.config.iiProviderUrl || 'https://id.ai';
+  }
+
+  /**
+   * Check if using the legacy II provider
+   * @returns true if using the legacy provider (identity.ic0.app or icp0.io)
+   */
+  isLegacyProvider(): boolean {
+    const provider = this.getIdentityProvider();
+    return provider.includes('ic0.app') || provider.includes('icp0.io');
   }
 
   private async refreshLogin(): Promise<void> {
