@@ -1,12 +1,23 @@
 /**
- * LRU (Least Recently Used) Cache implementation for actor caching
- * Provides automatic eviction of least recently used items when size limit is reached
+ * Node for doubly-linked list used in LRU tracking
+ */
+interface LRUNode<K, V> {
+  key: K;
+  value: V;
+  prev: LRUNode<K, V> | null;
+  next: LRUNode<K, V> | null;
+}
+
+/**
+ * Optimized LRU (Least Recently Used) Cache implementation for actor caching
+ * Uses doubly-linked list for O(1) eviction and access order tracking
+ * Based on patterns from isaacs/node-lru-cache
  */
 export class LRUCache<K, V> {
   private maxSize: number;
-  private cache: Map<K, V>;
-  private accessOrder: Map<K, number>;
-  private accessCounter: number = 0;
+  private cache: Map<K, LRUNode<K, V>>;
+  private head: LRUNode<K, V> | null = null;
+  private tail: LRUNode<K, V> | null = null;
 
   constructor(maxSize: number = 50) {
     if (maxSize <= 0) {
@@ -14,42 +25,50 @@ export class LRUCache<K, V> {
     }
     this.maxSize = maxSize;
     this.cache = new Map();
-    this.accessOrder = new Map();
   }
 
   /**
    * Get a value from the cache
-   * Updates access order for LRU tracking
+   * Updates access order for LRU tracking - O(1)
    */
   get(key: K): V | undefined {
-    const value = this.cache.get(key);
-    if (value !== undefined) {
-      // Update access order
-      this.accessOrder.set(key, ++this.accessCounter);
-    }
-    return value;
+    const node = this.cache.get(key);
+    if (!node) return undefined;
+
+    // Move to front (most recently used) - O(1)
+    this.moveToFront(node);
+    return node.value;
   }
 
   /**
    * Set a value in the cache
-   * Evicts least recently used item if size limit is reached
+   * Evicts least recently used item if size limit is reached - O(1)
    */
   set(key: K, value: V): void {
-    // If key exists, update it
-    if (this.cache.has(key)) {
-      this.cache.set(key, value);
-      this.accessOrder.set(key, ++this.accessCounter);
+    const existingNode = this.cache.get(key);
+
+    // If key exists, update value and move to front
+    if (existingNode) {
+      existingNode.value = value;
+      this.moveToFront(existingNode);
       return;
     }
 
-    // If at capacity, evict LRU item
+    // If at capacity, evict LRU item (tail) - O(1)
     if (this.cache.size >= this.maxSize) {
-      this.evictLRU();
+      this.evictTail();
     }
 
-    // Add new item
-    this.cache.set(key, value);
-    this.accessOrder.set(key, ++this.accessCounter);
+    // Create new node and add to front
+    const newNode: LRUNode<K, V> = {
+      key,
+      value,
+      prev: null,
+      next: this.head,
+    };
+
+    this.cache.set(key, newNode);
+    this.insertAtFront(newNode);
   }
 
   /**
@@ -60,10 +79,13 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * Delete a specific key from cache
+   * Delete a specific key from cache - O(1)
    */
   delete(key: K): boolean {
-    this.accessOrder.delete(key);
+    const node = this.cache.get(key);
+    if (!node) return false;
+
+    this.removeNode(node);
     return this.cache.delete(key);
   }
 
@@ -72,8 +94,8 @@ export class LRUCache<K, V> {
    */
   clear(): void {
     this.cache.clear();
-    this.accessOrder.clear();
-    this.accessCounter = 0;
+    this.head = null;
+    this.tail = null;
   }
 
   /**
@@ -98,24 +120,71 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * Evict the least recently used item
+   * Move node to front of list (most recently used) - O(1)
    */
-  private evictLRU(): void {
-    let lruKey: K | undefined;
-    let lruAccess = Infinity;
+  private moveToFront(node: LRUNode<K, V>): void {
+    if (node === this.head) return;
 
-    // Find the least recently used key
-    for (const [key, accessTime] of this.accessOrder.entries()) {
-      if (accessTime < lruAccess) {
-        lruAccess = accessTime;
-        lruKey = key;
-      }
+    // Remove from current position
+    this.removeNode(node);
+
+    // Insert at front
+    this.insertAtFront(node);
+  }
+
+  /**
+   * Remove node from linked list - O(1)
+   */
+  private removeNode(node: LRUNode<K, V>): void {
+    if (node.prev) {
+      node.prev.next = node.next;
+    } else {
+      // Node is head
+      this.head = node.next;
     }
 
-    // Remove LRU item
-    if (lruKey !== undefined) {
-      this.cache.delete(lruKey);
-      this.accessOrder.delete(lruKey);
+    if (node.next) {
+      node.next.prev = node.prev;
+    } else {
+      // Node is tail
+      this.tail = node.prev;
+    }
+  }
+
+  /**
+   * Insert node at front of list - O(1)
+   */
+  private insertAtFront(node: LRUNode<K, V>): void {
+    node.next = this.head;
+    node.prev = null;
+
+    if (this.head) {
+      this.head.prev = node;
+    }
+    this.head = node;
+
+    if (!this.tail) {
+      this.tail = node;
+    }
+  }
+
+  /**
+   * Evict the tail (least recently used item) - O(1)
+   * Optimized from O(n) linear scan to O(1) constant time
+   */
+  private evictTail(): void {
+    if (!this.tail) return;
+
+    const key = this.tail.key;
+    this.cache.delete(key);
+
+    if (this.tail.prev) {
+      this.tail.prev.next = null;
+      this.tail = this.tail.prev;
+    } else {
+      // Only one item in cache
+      this.head = null;
+      this.tail = null;
     }
   }
 
@@ -127,15 +196,17 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * Get entries sorted by access order (most recent first)
+   * Get entries sorted by access order (most recent first) - O(n)
    */
   getEntriesByAccessOrder(): Array<[K, V]> {
-    const entries = Array.from(this.cache.entries());
-    entries.sort((a, b) => {
-      const aAccess = this.accessOrder.get(a[0]) || 0;
-      const bAccess = this.accessOrder.get(b[0]) || 0;
-      return bAccess - aAccess;
-    });
+    const entries: Array<[K, V]> = [];
+    let current = this.head;
+
+    while (current) {
+      entries.push([current.key, current.value]);
+      current = current.next;
+    }
+
     return entries;
   }
 }

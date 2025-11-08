@@ -93,6 +93,7 @@ export declare class PNP implements PnpInterface {
     private actorManager;
     private errorManager;
     private stateManager;
+    private cachedEnabledWallets;
     private static adapterRegistry;
     /**
      * Register a new adapter globally. Call before PNP instantiation to make available to all instances.
@@ -220,6 +221,8 @@ export declare class PNP implements PnpInterface {
     isAuthenticated(): boolean;
     /**
      * Get list of enabled wallet adapters.
+     * Uses caching to avoid recreating objects on every call for better performance.
+     * Cache is invalidated automatically when configuration changes.
      * @returns {AdapterConfig[]} Array of enabled adapter configurations
      * @example
      * ```typescript
@@ -230,6 +233,12 @@ export declare class PNP implements PnpInterface {
      * ```
      */
     getEnabledWallets(): AdapterConfig[];
+    /**
+     * Invalidate the enabled wallets cache.
+     * Called internally when adapter configuration changes.
+     * @private
+     */
+    private invalidateWalletCache;
     /**
      * Get performance metrics and cache statistics.
      * @returns {Object} Performance statistics including cache stats, metrics, and timings
@@ -291,4 +300,4 @@ export type { NetworkDetection, MultiChainConfig } from './adapters/BaseMultiCha
 export { BaseSiwxAdapter } from './adapters/BaseSiwxAdapter';
 export { Adapter } from './types/index.d';
 export type { Wallet } from './types/index.d';
-export { deriveAccountId, formatSiwsMessage } from './utils';
+export { deriveAccountId, formatSiwsMessage, processPrincipal } from './utils';

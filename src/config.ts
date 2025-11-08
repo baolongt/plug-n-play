@@ -36,6 +36,59 @@ const DEFAULTS = {
   storage: { key: 'pnpState' }
 };
 
+/**
+ * Build global settings object that will be shared across all adapters
+ * Performance optimization: Single source of truth instead of copying into every adapter
+ */
+function buildGlobalSettings(
+  input: CreatePnpArgs,
+  network: 'local' | 'ic',
+  ports: typeof DEFAULTS.ports,
+  delegation: typeof DEFAULTS.delegation,
+  storage: typeof DEFAULTS.storage,
+  providers: CreatePnpArgs['providers'],
+  hostUrl: string,
+  derivationOrigin: string
+) {
+  const isLocal = network === 'local';
+  return {
+    hostUrl,
+    derivationOrigin,
+    fetchRootKey: input.security?.fetchRootKey ?? isLocal,
+    verifyQuerySignatures: input.security?.verifyQuerySignatures ?? !isLocal,
+    delegationTimeout: delegation.timeout,
+    delegationTargets: delegation.targets,
+    localStorageKey: storage.key,
+    siwsProviderCanisterId: providers?.siws,
+    siweProviderCanisterId: providers?.siwe,
+    frontendCanisterId: providers?.frontend,
+  };
+}
+
+/**
+ * Build adapter configuration by merging base, overrides, and global settings
+ * Uses destructuring to cleanly separate adapter-specific props from known keys
+ */
+function buildAdapterConfig(
+  base: Adapter.Config,
+  override: AdapterOverride | undefined,
+  globals: ReturnType<typeof buildGlobalSettings>
+): Adapter.Config {
+  // Destructure to separate known keys from adapter-specific properties
+  const { enabled, config, ...adapterSpecific } = override || {};
+
+  return {
+    ...base,
+    enabled: enabled ?? base.enabled,
+    config: {
+      ...base.config,
+      ...globals,
+      ...adapterSpecific,
+      ...config
+    }
+  };
+}
+
 // Clean configuration factory  
 export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
   const network = input.network || DEFAULTS.network;
@@ -54,12 +107,24 @@ export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
     ? `https://${providers.frontend}.icp0.io`
     : `http://localhost:${ports.frontend}`;
 
+  // Build global settings once - shared across all adapters
+  const globals = buildGlobalSettings(
+    input,
+    network,
+    ports,
+    delegation,
+    storage,
+    providers,
+    hostUrl,
+    derivationOrigin
+  );
+
   // Merge extensions if provided
   const extensionAdapters = input.extensions 
     ? mergeAdapterExtensions(...input.extensions)
     : {};
   
-  // Process adapters with concise merging
+  // Process adapters with simplified merging
   const adapters: Record<string, Adapter.Config> = {};
   const adapterIds = new Set([
     ...Object.keys(Adapters),
@@ -67,12 +132,9 @@ export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
     ...Object.keys(input.adapters || {})
   ]);
   
-  
   for (const id of adapterIds) {
-    // Check in order: built-in, extensions, overrides
     const base = Adapters[id] || extensionAdapters[id];
     const override = input.adapters?.[id];
-    
     
     // Custom adapter without base
     if (!base && override?.adapter) {
@@ -82,33 +144,8 @@ export function createPNPConfig(input: CreatePnpArgs = {}): GlobalPnpConfig {
     
     if (!base) continue;
     
-    // Merge configuration efficiently
-    adapters[id] = {
-      ...base,
-      enabled: override?.enabled ?? base.enabled,
-      config: {
-        ...base.config,
-        // Global settings
-        hostUrl,
-        derivationOrigin,
-        fetchRootKey: input.security?.fetchRootKey ?? isLocal,
-        verifyQuerySignatures: input.security?.verifyQuerySignatures ?? !isLocal,
-        delegationTimeout: delegation.timeout,
-        delegationTargets: delegation.targets,
-        localStorageKey: storage.key,
-        // Provider IDs
-        siwsProviderCanisterId: providers.siws,
-        siweProviderCanisterId: providers.siwe,
-        frontendCanisterId: providers.frontend,
-        // Adapter-specific overrides (excluding 'enabled' and 'config')
-        ...Object.fromEntries(
-          Object.entries(override || {})
-            .filter(([k]) => k !== 'enabled' && k !== 'config')
-        ),
-        // Merge user's config overrides last to allow per-adapter customization
-        ...(override?.config || {})
-      }
-    };
+    // Use helper to merge configuration efficiently
+    adapters[id] = buildAdapterConfig(base, override, globals);
   }
 
   // Return clean global config
@@ -197,38 +234,33 @@ export class ConfigBuilder {
     const excluded = new Set(overrides && 'exclude' in overrides ? (overrides.exclude || []) : []);
     if (!this.config.adapters) this.config.adapters = {};
     
-    // No overrides provided: enable all IC adapters by default
-    if (!overrides) {
-      for (const id of icIds) {
-        if (Adapters[id] && !excluded.has(id)) {
-          this.config.adapters[id] = { enabled: true };
-        }
+    // Normalize overrides to consistent format
+    const normalizedOverrides: Record<string, AdapterOverride | null> = {};
+    for (const id of icIds) {
+      if (excluded.has(id)) {
+        normalizedOverrides[id] = null; // Mark as disabled
+        continue;
       }
-      return this;
+      
+      const override = overrides?.[id];
+      if (override === undefined) {
+        normalizedOverrides[id] = { enabled: true };
+      } else if (typeof override === 'boolean') {
+        normalizedOverrides[id] = { enabled: override };
+      } else {
+        normalizedOverrides[id] = { ...override, enabled: override.enabled ?? true };
+      }
     }
     
-    // Apply per-adapter overrides, defaulting unspecified to enabled: true
+    // Apply normalized overrides
     for (const id of icIds) {
       if (!Adapters[id]) continue;
-      if (excluded.has(id)) {
+      
+      const normalized = normalizedOverrides[id];
+      if (normalized === null) {
         this.config.adapters[id] = { ...(this.config.adapters[id] || {}), enabled: false };
-        continue;
-      }
-      const override = overrides[id];
-      
-      if (override === undefined) {
-        if (!this.config.adapters[id]) this.config.adapters[id] = { enabled: true };
-        continue;
-      }
-      
-      if (typeof override === 'boolean') {
-        this.config.adapters[id] = { ...(this.config.adapters[id] || {}), enabled: override };
       } else {
-        this.config.adapters[id] = {
-          ...(this.config.adapters[id] || {}),
-          ...override,
-          enabled: override.enabled ?? true
-        } as any;
+        this.config.adapters[id] = { ...(this.config.adapters[id] || {}), ...normalized } as any;
       }
     }
     
