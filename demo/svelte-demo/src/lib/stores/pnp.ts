@@ -12,6 +12,7 @@ import { RabbyExtension } from '../../../../../packages/rabby/src';
 export const pnpInstance = writable<PNP | null>(null);
 export const isConnected = writable(false);
 export const principalId = writable<string | null>(null);
+export const subaccount = writable<string | null>(null);
 export const lastEvent = writable<any>(null);
 export const connectingWalletId = writable<string | null>(null);
 export const error = writable<string | null>(null);
@@ -93,6 +94,7 @@ export const connectWallet = async (walletId: string) => {
         
         isConnected.set(true);
         principalId.set(account.owner);
+        subaccount.set(account.subaccount || null);
         connectingWalletId.set(null);
         lastEvent.set({ type: 'connected', walletId, principal: account.owner });
         localStorage.setItem('pnpConnectedWallet', walletId);

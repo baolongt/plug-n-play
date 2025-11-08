@@ -1,7 +1,8 @@
 import { Principal } from "@dfinity/principal";
-import { principalToSubAccount } from "@dfinity/utils";
 import { ActorSubclass, HttpAgent, Actor, AnonymousIdentity, Identity } from "@dfinity/agent";
 import { Adapter } from "./types/index.d";
+import { AccountIdentifier } from '@dfinity/ledger-icp';
+
 
 // ============================================================================
 // IC/Principal Utilities
@@ -12,14 +13,15 @@ import { Adapter } from "./types/index.d";
  */
 export function deriveAccountId(principal: string | Principal): string {
   try {
-    const principalObj = typeof principal === "string" 
+    const principalObj = typeof principal === "string"
       ? Principal.fromText(principal)
       : principal;
-    
-    const accountId = principalToSubAccount(principalObj);
-    
-    // Convert Uint8Array to hex string
-    return Array.from(accountId).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const accountIdentifier = AccountIdentifier.fromPrincipal({
+      principal: principalObj
+    });
+
+    return accountIdentifier.toHex();
   } catch (err) {
     console.error("[Utils] Error deriving account ID:", err);
     throw err;

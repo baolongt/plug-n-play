@@ -3,6 +3,7 @@
     availableWallets,
     isConnected,
     principalId,
+    subaccount,
     connectWallet,
     disconnectWallet,
     lastEvent,
@@ -37,6 +38,10 @@
       <div class="info">
         <label>Principal ID</label>
         <code>{$principalId}</code>
+      </div>
+      <div class="info">
+        <label>Account ID</label>
+        <code>{$subaccount}</code>
       </div>
       <div class="info">
         <label>ICP Balance</label>
