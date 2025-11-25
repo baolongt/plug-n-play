@@ -1,6 +1,3 @@
-import { Signer } from "@slide-computer/signer";
-import { SignerAgent } from "@slide-computer/signer-agent";
-
 export interface AdapterConstructor {
   new (config: any): AdapterInterface;
 }
@@ -10,7 +7,7 @@ export interface AdapterConfig {
   enabled: boolean;
   logo: string;
   walletName: string;
-  chain: "ICP" | "SOL" | "ETH" | "MULTI";
+  chain: 'ICP' | 'SOL' | 'ETH' | 'MULTI';
   website?: string;
   adapter: AdapterConstructor;
   config: {
@@ -31,19 +28,19 @@ export interface GetActorOptions {
 }
 
 export enum AdapterStatus {
-  INIT = "INIT",
-  READY = "READY",
-  CONNECTING = "CONNECTING",
-  CONNECTED = "CONNECTED",
-  DISCONNECTING = "DISCONNECTING",
-  DISCONNECTED = "DISCONNECTED",
-  ERROR = "ERROR",
+  INIT = 'INIT',
+  READY = 'READY',
+  CONNECTING = 'CONNECTING',
+  CONNECTED = 'CONNECTED',
+  DISCONNECTING = 'DISCONNECTING',
+  DISCONNECTED = 'DISCONNECTED',
+  ERROR = 'ERROR',
 }
 
 export enum AdapterChain {
-  ICP = "icp",
-  SOL = "sol",
-  ETH = "eth",
+  ICP = 'icp',
+  SOL = 'sol',
+  ETH = 'eth',
 }
 
 export interface AdapterAddresses {
@@ -58,28 +55,10 @@ export interface AdapterInterface {
   getPrincipal(): Promise<string>;
   getAccountId(): Promise<string>;
   getAddresses(): Promise<AdapterAddresses>;
-  createActor<T>(
-    canisterId: string,
-    idl: any,
-    options?: { requiresSigning?: boolean }
-  ): any;
-  undelegatedActor?<T>(
-    canisterId: string,
-    idlFactory: any,
-    options?: { requiresSigning?: boolean }
-  ): any;
-
-  /**
-   * Get current Signer instance, only exist if adapter implement BaseSignerAdapter
-   */
-  getSigner(): Signer | null;
-
-  /**
-   * Get current SignerAgent instance, only exist if adapter implement BaseSignerAdapter
-   */
-  getSignerAgent(): SignerAgent<Signer> | null;
+  createActor<T>(canisterId: string, idl: any, options?: { requiresSigning?: boolean }): any;
+  undelegatedActor?<T>(canisterId: string, idlFactory: any, options?: { requiresSigning?: boolean }): any;
 }
 
 export interface AdapterWallet {
   adapter: AdapterConstructor;
-}
+} 
