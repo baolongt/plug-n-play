@@ -104,6 +104,9 @@ export class PNP implements PnpInterface {
   private errorManager: ErrorManager;
   private stateManager: StateManager;
 
+  // Performance optimization: Cache enabled wallets to avoid recreating objects on every call
+  private cachedEnabledWallets: AdapterConfig[] | null = null;
+
   // Static registry for adapters
   private static adapterRegistry: Record<string, AdapterConfig> = {};
 
@@ -145,13 +148,16 @@ export class PNP implements PnpInterface {
    * @param config - Configuration object for PNP
    */
   constructor(config: GlobalPnpConfig = {}) {
-    // Merge registered adapters with config.adapters
-    const mergedAdapters = {
-      ...PNP.adapterRegistry,
-      ...(config.adapters || {})
+    // Performance optimization: Single adapter merge operation
+    // Merge registered adapters with config.adapters only once
+    const mergedConfig = {
+      ...config,
+      adapters: {
+        ...PNP.adapterRegistry,
+        ...(config.adapters || {})
+      }
     };
-    const mergedConfig = { ...config, adapters: mergedAdapters };
-    
+
     this.errorManager = new ErrorManager(
       config.logLevel || LogLevel.INFO
     );
@@ -166,22 +172,15 @@ export class PNP implements PnpInterface {
       }
     );
 
+    // ConfigManager handles validation, no need to re-merge or update
     this.configManager = new ConfigManager(mergedConfig);
-    let finalConfig = this.configManager.getConfig();
-    
-    // Re-merge registered adapters after ConfigManager processing
-    // This ensures registered adapters aren't lost during config processing
-    finalConfig = {
-      ...finalConfig,
-      adapters: {
-        ...finalConfig.adapters,
-        ...PNP.adapterRegistry
-      }
-    };
-    
-    // Update the configManager with the final config including registered adapters
-    this.configManager.updateConfig(finalConfig);
-    
+    const finalConfig = this.configManager.getConfig();
+
+    // Invalidate wallet cache when configuration changes
+    this.configManager.setOnConfigChange(() => {
+      this.invalidateWalletCache();
+    });
+
     this.connectionManager = new ConnectionManager(finalConfig, this.errorManager);
     this.actorManager = new ActorManager(finalConfig, null);
 
@@ -375,6 +374,8 @@ export class PNP implements PnpInterface {
 
   /**
    * Get list of enabled wallet adapters.
+   * Uses caching to avoid recreating objects on every call for better performance.
+   * Cache is invalidated automatically when configuration changes.
    * @returns {AdapterConfig[]} Array of enabled adapter configurations
    * @example
    * ```typescript
@@ -385,12 +386,27 @@ export class PNP implements PnpInterface {
    * ```
    */
   getEnabledWallets(): AdapterConfig[] {
-    return Object.entries(this.config.adapters)
+    if (this.cachedEnabledWallets) {
+      return this.cachedEnabledWallets;
+    }
+
+    this.cachedEnabledWallets = Object.entries(this.config.adapters)
       .filter(([_, wallet]) => wallet?.enabled !== false)
       .map(([id, wallet]) => ({
         ...wallet,
         id: wallet.id || id // Ensure id is always present
       })) as AdapterConfig[];
+
+    return this.cachedEnabledWallets;
+  }
+
+  /**
+   * Invalidate the enabled wallets cache.
+   * Called internally when adapter configuration changes.
+   * @private
+   */
+  private invalidateWalletCache(): void {
+    this.cachedEnabledWallets = null;
   }
 
   /**
@@ -463,4 +479,4 @@ export { Adapter } from './types/index.d';
 export type { Wallet } from './types/index.d';
 
 // Export utilities needed by packages
-export { deriveAccountId, formatSiwsMessage } from './utils';
+export { deriveAccountId, formatSiwsMessage, processPrincipal } from './utils';

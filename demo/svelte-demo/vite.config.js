@@ -14,18 +14,17 @@ export default defineConfig({
         hmr: true
       }
     }),
-    // Inject Buffer polyfill for browser
+    // Inject Buffer and process polyfills for browser
     inject({
       Buffer: ['buffer', 'Buffer'],
-      process: 'process',
+      process: 'process/browser.js',
     }),
   ],
   resolve: {
     alias: {
       '@pnp': path.resolve(__dirname, '../../src'),
-      // Make sure buffer polyfill is available
-      'buffer': 'buffer',
-      'process': 'process/browser',
+      'process/browser.js': path.resolve(__dirname, 'node_modules/process/browser.js'),
+      'process/browser': path.resolve(__dirname, 'node_modules/process/browser.js'),
     },
   },
   define: {
@@ -39,8 +38,8 @@ export default defineConfig({
       }
     },
     include: [
-      'buffer', 
-      'process',
+      'buffer',
+      'process/browser',
       '@solana/web3.js',
       '@solana/spl-token',
       '@solana/spl-token-metadata',
@@ -52,7 +51,12 @@ export default defineConfig({
   build: {
     target: 'esnext',
     rollupOptions: {
-      external: []
+      external: [],
+      output: {
+        manualChunks: {
+          'solana': ['@solana/web3.js', '@solana/spl-token'],
+        }
+      }
     }
   },
   server: {

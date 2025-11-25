@@ -24,8 +24,10 @@ export interface TimingEntry {
 
 /**
  * Performance monitor for tracking and analyzing PNP operations
+ * Uses bounded sliding window to prevent unbounded memory growth
  */
 export class PerformanceMonitor {
+  private readonly MAX_ENTRIES_PER_OPERATION = 100;
   private timings: Map<string, TimingEntry[]> = new Map();
   private metrics: PerformanceMetrics = {};
   private cacheHits: number = 0;
@@ -38,21 +40,28 @@ export class PerformanceMonitor {
 
   /**
    * Start timing an operation
+   * Maintains bounded sliding window of last N entries per operation
    */
   startTiming(operation: string, id?: string): string {
     if (!this.enabled) return '';
-    
+
     const operationId = id || `${operation}-${Date.now()}`;
     const key = `${operation}:${operationId}`;
-    
+
     const timing: TimingEntry = {
       startTime: performance.now(),
     };
-    
+
     const timings = this.timings.get(operation) || [];
     timings.push(timing);
+
+    // Keep only last N entries (sliding window)
+    if (timings.length > this.MAX_ENTRIES_PER_OPERATION) {
+      timings.shift(); // Remove oldest entry
+    }
+
     this.timings.set(operation, timings);
-    
+
     return key;
   }
 
@@ -107,7 +116,7 @@ export class PerformanceMonitor {
   /**
    * Update average metrics for an operation
    */
-  private updateMetrics(operation: string, duration: number): void {
+  private updateMetrics(operation: string, _duration: number): void {
     switch (operation) {
       case 'connection':
         this.metrics.connectionTime = this.getAverageTiming('connection');
@@ -236,7 +245,7 @@ export class PerformanceMonitor {
 let _globalPerformanceMonitor: PerformanceMonitor | null = null;
 
 export const globalPerformanceMonitor: PerformanceMonitor = new Proxy({} as PerformanceMonitor, {
-  get(target, prop, receiver) {
+  get(_target, prop, _receiver) {
     if (!_globalPerformanceMonitor) {
       _globalPerformanceMonitor = new PerformanceMonitor(
         isBrowser && window.location?.hostname === 'localhost'

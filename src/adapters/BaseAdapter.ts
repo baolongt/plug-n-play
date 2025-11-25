@@ -3,12 +3,13 @@
 import { Actor, HttpAgent, type ActorSubclass, type Identity } from "@dfinity/agent";
 import { type Wallet, Adapter } from "../types/index.d";
 import { AdapterSpecificConfig } from "../types/AdapterConfigs";
-import { 
-  deriveAccountId, 
-  createActorCacheKey, 
+import {
+  deriveAccountId,
+  createActorCacheKey,
   createAccountFromPrincipal
 } from "../utils";
 import { ErrorManager, LogLevel } from "../managers/ErrorManager";
+import { LRUCache } from "../utils/LRUCache";
 
 /**
  * Type-safe constructor arguments for adapters
@@ -34,7 +35,7 @@ export abstract class BaseAdapter<T extends AdapterSpecificConfig = AdapterSpeci
   protected state: Adapter.Status = Adapter.Status.INIT;
   protected config: T;
   protected adapter: Adapter.Config;
-  protected actorCache: Map<string, ActorSubclass<any>> = new Map();
+  protected actorCache: LRUCache<string, ActorSubclass<any>> = new LRUCache(20);
   protected logger: ErrorManager;
   private disposed = false;
 

@@ -30,6 +30,7 @@ export interface StateHistory {
 }
 
 export class StateManager {
+  private readonly MAX_HISTORY_SIZE = 50;
   private state: PnpState = PnpState.INITIALIZED;
   private transitions: StateTransition[] = [];
   private lastError?: Error;
@@ -102,6 +103,12 @@ export class StateManager {
 
     this.state = newState;
     this.transitions.push(transition);
+
+    // Keep only last N transitions (circular buffer)
+    if (this.transitions.length > this.MAX_HISTORY_SIZE) {
+      this.transitions = this.transitions.slice(-this.MAX_HISTORY_SIZE);
+    }
+
     this.saveState();
 
     this.errorManager.info(`State changed from ${transition.from} to ${transition.to}`, {
