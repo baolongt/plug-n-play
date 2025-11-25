@@ -14,12 +14,12 @@ import stoicLogo from "../../assets/stoic.jpg";
 export const Adapters: Record<string, Adapter.Config> = {
   // Internet Computer Adapters
   oisy: {
-    id: 'oisy',
+    id: "oisy",
     enabled: true,
     walletName: "OISY Wallet",
     logo: oisyLogo,
     website: "https://oisy.com",
-    chain: 'ICP',
+    chain: "ICP",
     adapter: UnifiedSignerAdapter,
     config: {
       signerType: SignerType.OISY,
@@ -28,12 +28,12 @@ export const Adapters: Record<string, Adapter.Config> = {
     },
   },
   nfid: {
-    id: 'nfid',
+    id: "nfid",
     enabled: true,
     walletName: "NFID",
     logo: nfidLogo,
     website: "https://nfid.one",
-    chain: 'ICP',
+    chain: "ICP",
     adapter: UnifiedSignerAdapter,
     config: {
       signerType: SignerType.NFID,
@@ -44,58 +44,56 @@ export const Adapters: Record<string, Adapter.Config> = {
     },
   },
   stoic: {
-    id: 'stoic',
+    id: "stoic",
     enabled: true,
     walletName: "Stoic",
     logo: stoicLogo,
     website: "https://www.stoicwallet.com",
-    chain: 'ICP',
+    chain: "ICP",
     adapter: UnifiedSignerAdapter,
     config: {
       signerType: SignerType.STOIC,
       maxTimeToLive: BigInt(8 * 60 * 60 * 1000 * 1000 * 1000), // 8 hours
-      keyType: 'ECDSA' as const,
+      keyType: "ECDSA" as const,
     },
   },
   ii: {
-    id: 'ii',
+    id: "ii",
     enabled: true,
     walletName: "Internet Identity",
     logo: dfinityLogo,
     website: "https://internetcomputer.org",
-    chain: 'ICP',
+    chain: "ICP",
     adapter: IIAdapter,
     config: {
       fetchRootKey: true,
       verifyQuerySignatures: false,
-      timeout: 24 * 60 * 60 * 1000,
-      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
+      delegationTimeout: 24 * 60 * 60 * 1000,
       iiProviderUrl: "https://id.ai", // II 2.0 (new domain)
     },
   },
   ii_legacy: {
-    id: 'ii_legacy',
+    id: "ii_legacy",
     enabled: true,
     walletName: "Internet Identity (Legacy)",
     logo: dfinityLogo,
     website: "https://internetcomputer.org",
-    chain: 'ICP',
+    chain: "ICP",
     adapter: IIAdapter,
     config: {
       fetchRootKey: true,
       verifyQuerySignatures: false,
-      timeout: 24 * 60 * 60 * 1000,
-      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
+      delegationTimeout: 24 * 60 * 60 * 1000,
       iiProviderUrl: "https://identity.ic0.app", // II 1.0 (legacy domain)
     },
   },
   plug: {
-    id: 'plug',
+    id: "plug",
     enabled: true,
     walletName: "Plug",
     logo: plugLogo,
     website: "https://plugwallet.ooo",
-    chain: 'ICP',
+    chain: "ICP",
     adapter: UnifiedSignerAdapter,
     config: {
       signerType: SignerType.PLUG,
