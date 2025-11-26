@@ -51,16 +51,22 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
     // Initialize AuthClient with transport for better session management
     AuthClient.create({
       idleOptions: {
-        idleTimeout: Number(this.config.timeout ?? 1000 * 60 * 60 * 24), // Default 24 hours
+        idleTimeout: Number(
+          this.config.delegationTimeout ?? 1000 * 60 * 60 * 24
+        ), // Default 24 hours
         disableDefaultIdleCallback: true,
       },
-    }).then(async client => {
-      this.authClient = client;
-      this.authClient.idleManager?.registerCallback?.(() => this.refreshLogin());
-    }).catch(err => {
-      this.handleError('Failed to create AuthClient', err);
-      this.setState(Adapter.Status.ERROR);
-    });
+    })
+      .then(async (client) => {
+        this.authClient = client;
+        this.authClient.idleManager?.registerCallback?.(() =>
+          this.refreshLogin()
+        );
+      })
+      .catch((err) => {
+        this.handleError("Failed to create AuthClient", err);
+        this.setState(Adapter.Status.ERROR);
+      });
   }
 
   private async ensureAuthClient(): Promise<void> {
@@ -132,10 +138,14 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
       const loginOptions = {
         derivationOrigin: this.config.derivationOrigin,
         identityProvider,
-        maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
+        maxTimeToLive:
+          this.config.delegationTimeout ??
+          BigInt(1 * 24 * 60 * 60 * 1000 * 1000 * 1000), // Default 1 day
         windowOpenerFeatures: (() => {
           const screen = getScreenDimensions();
-          return `width=500,height=600,left=${screen.width / 2 - 250},top=${screen.height / 2 - 300}`;
+          return `width=500,height=600,left=${screen.width / 2 - 250},top=${
+            screen.height / 2 - 300
+          }`;
         })(),
         onSuccess: async () => {
           try {
@@ -149,9 +159,11 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
           }
         },
         onError: (error?: string) => {
-          this.handleError('Login error', error || 'Unknown error');
+          this.handleError("Login error", error || "Unknown error");
           this.setState(Adapter.Status.ERROR);
-          reject(new Error(`II Authentication failed: ${error || 'Unknown error'}`));
+          reject(
+            new Error(`II Authentication failed: ${error || "Unknown error"}`)
+          );
         },
       };
       
